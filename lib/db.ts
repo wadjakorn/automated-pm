@@ -65,4 +65,17 @@ function migrate(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_statuses_project ON statuses(project_id);
     CREATE INDEX IF NOT EXISTS idx_transitions_project ON transitions(project_id);
   `);
+
+  // Project names are unique among live (non-deleted) projects, so `--project`
+  // can take a name instead of an id. Partial index ignores soft-deleted rows,
+  // so a name frees up after its project is trashed. Best-effort: if a legacy
+  // DB already holds duplicate live names, the index can't be created — the
+  // app-level checks in createProject/updateProject still enforce it forward.
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS uniq_projects_name ON projects(name) WHERE deleted_at IS NULL"
+    );
+  } catch {
+    // pre-existing duplicate live names; leave to app-level guards
+  }
 }

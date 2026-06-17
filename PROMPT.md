@@ -29,6 +29,9 @@ to create/update/delete tasks via a CLI against the SAME data the browser shows.
 
 ## Data model (SQLite)
 - projects(id TEXT pk, name, description, created_at, updated_at, deleted_at)
+  Project `name` is UNIQUE among live (non-deleted) projects — partial unique
+  index `WHERE deleted_at IS NULL` + app-level guards in create/update. A name
+  frees up once its project is trashed. This lets `--project` take a name.
 - statuses(id, project_id, key, label, sort_order, is_final, UNIQUE(project_id,key))
 - transitions(id, project_id, from_key, to_key, UNIQUE(project_id,from_key,to_key))
 - tasks(id, project_id, title, description, status_key, rank, version INT default 1,
@@ -79,15 +82,18 @@ project-manager/
   AGENTS.md      # CLI guide for LLM agents (commands, JSON/error contract, rules)
 
 ## CLI surface (cli/pm.ts) — base URL from PM_API env, default http://localhost:3000
-pm project create --name "X" [--description ...]
+`--project` accepts a project id OR its (unique) name — server resolves either,
+id tried first so an id never shadowed by a name. Names unique among live
+projects; create/rename to a taken name -> bad_request. Quote names with spaces.
+pm project create --name "X" [--description ...]   # name must be unique
 pm project list
-pm status list --project <id>
-pm status add --project <id> --key qa --label "QA" [--final]
-pm status set-final --project <id> --key released --final true
-pm transition add --project <id> --from doing --to qa
-pm transition remove --project <id> --from doing --to qa
-pm task create --project <id> --title "..." [--description ...] [--status backlog]
-pm task list --project <id> [--status doing] [--include-deleted]
+pm status list --project <id|name>
+pm status add --project <id|name> --key qa --label "QA" [--final]
+pm status set-final --project <id|name> --key released --final true
+pm transition add --project <id|name> --from doing --to qa
+pm transition remove --project <id|name> --from doing --to qa
+pm task create --project <id|name> --title "..." [--description ...] [--status backlog]
+pm task list --project <id|name> [--status doing] [--include-deleted]
 pm task move --id <id> --status doing [--version N]
 pm task update --id <id> [--title ...] [--description ...] [--version N]
 pm task delete --id <id>          # soft

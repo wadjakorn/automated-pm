@@ -68,21 +68,26 @@ const need = (f: Flags, k: string): string => {
   return v as string;
 };
 
+// --project accepts an id OR a project name; the server resolves either.
+// URL-encode it because a name may contain spaces/slashes when used in a path.
+const proj = (f: Flags): string => encodeURIComponent(need(f, "project"));
+
 const HELP = `pm — Project Manager CLI
 
   pm project create --name <name> [--description <text>]
   pm project list
 
-  pm status list --project <id>
-  pm status add --project <id> --key <key> --label <label> [--final]
-  pm status set-final --project <id> --key <key> --final <true|false>
-  pm status remove --project <id> --key <key>
+  # --project accepts a project id OR its (unique) name, e.g. --project 'demo'
+  pm status list --project <id|name>
+  pm status add --project <id|name> --key <key> --label <label> [--final]
+  pm status set-final --project <id|name> --key <key> --final <true|false>
+  pm status remove --project <id|name> --key <key>
 
-  pm transition add --project <id> --from <key> --to <key>
-  pm transition remove --project <id> --from <key> --to <key>
+  pm transition add --project <id|name> --from <key> --to <key>
+  pm transition remove --project <id|name> --from <key> --to <key>
 
-  pm task create --project <id> --title <title> [--description <text>] [--status <key>]
-  pm task list --project <id> [--status <key>] [--include-deleted]
+  pm task create --project <id|name> --title <title> [--description <text>] [--status <key>]
+  pm task list --project <id|name> [--status <key>] [--include-deleted]
   pm task move --id <id> --status <key> [--version <n>]
   pm task update --id <id> [--title <t>] [--description <text>] [--version <n>]
   pm task delete --id <id>
@@ -107,10 +112,10 @@ async function main() {
       return unwrap(await api("GET", "/api/projects"));
 
     case "status list":
-      return unwrap(await api("GET", `/api/projects/${need(f, "project")}/statuses`));
+      return unwrap(await api("GET", `/api/projects/${proj(f)}/statuses`));
     case "status add":
       return unwrap(
-        await api("POST", `/api/projects/${need(f, "project")}/statuses`, {
+        await api("POST", `/api/projects/${proj(f)}/statuses`, {
           key: need(f, "key"),
           label: f.label,
           is_final: !!f.final,
@@ -118,7 +123,7 @@ async function main() {
       );
     case "status set-final":
       return unwrap(
-        await api("PATCH", `/api/projects/${need(f, "project")}/statuses`, {
+        await api("PATCH", `/api/projects/${proj(f)}/statuses`, {
           key: need(f, "key"),
           is_final: f.final === "true" || f.final === true,
         })
@@ -127,13 +132,13 @@ async function main() {
       return unwrap(
         await api(
           "DELETE",
-          `/api/projects/${need(f, "project")}/statuses?key=${encodeURIComponent(need(f, "key"))}`
+          `/api/projects/${proj(f)}/statuses?key=${encodeURIComponent(need(f, "key"))}`
         )
       );
 
     case "transition add":
       return unwrap(
-        await api("POST", `/api/projects/${need(f, "project")}/transitions`, {
+        await api("POST", `/api/projects/${proj(f)}/transitions`, {
           from: need(f, "from"),
           to: need(f, "to"),
         })
@@ -142,7 +147,7 @@ async function main() {
       return unwrap(
         await api(
           "DELETE",
-          `/api/projects/${need(f, "project")}/transitions?from=${encodeURIComponent(
+          `/api/projects/${proj(f)}/transitions?from=${encodeURIComponent(
             need(f, "from")
           )}&to=${encodeURIComponent(need(f, "to"))}`
         )

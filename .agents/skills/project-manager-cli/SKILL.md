@@ -72,20 +72,24 @@ Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
 
 ## 2. Command reference
 
+`--project` accepts a **project id OR its name** (names are unique among live
+projects). `--project 'My Site'` and `--project qgYkAVRhbeVh` are equivalent —
+the server resolves either, id first. Quote names with spaces.
+
 ```
-pm project create --name <name> [--description <text>]
+pm project create --name <name> [--description <text>]   # name must be unique
 pm project list
 
-pm status list   --project <id>
-pm status add    --project <id> --key <key> --label <label> [--final]
-pm status set-final --project <id> --key <key> --final <true|false>
-pm status remove --project <id> --key <key>
+pm status list   --project <id|name>
+pm status add    --project <id|name> --key <key> --label <label> [--final]
+pm status set-final --project <id|name> --key <key> --final <true|false>
+pm status remove --project <id|name> --key <key>
 
-pm transition add    --project <id> --from <key> --to <key>
-pm transition remove --project <id> --from <key> --to <key>
+pm transition add    --project <id|name> --from <key> --to <key>
+pm transition remove --project <id|name> --from <key> --to <key>
 
-pm task create  --project <id> --title <title> [--description <text>] [--status <key>]
-pm task list    --project <id> [--status <key>] [--include-deleted]
+pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>]
+pm task list    --project <id|name> [--status <key>] [--include-deleted]
 pm task move    --id <id> --status <key> [--version <n>]
 pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>]
 pm task delete  --id <id>          # soft delete (recoverable)
@@ -110,6 +114,10 @@ pm task restore --id <id>
   with `pm task list --project <id> --include-deleted` (filter `deleted_at != null`).
 - **Status edits are guarded.** Removing a status or edge that an existing task
   depends on returns `bad_request` — the server refuses to orphan a task.
+- **`--project` takes id OR name.** Project names are unique among live
+  projects, so you can address one by name (`--project 'My Site'`) instead of
+  copying its id. Creating/renaming to a name already taken returns
+  `bad_request`. A name frees up once its project is trashed.
 
 ## 4. Typical workflow
 

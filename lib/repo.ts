@@ -20,17 +20,35 @@ export function listProjects(): Project[] {
     .all() as Project[];
 }
 
-export function getProject(projectId: string): Project {
-  const p = getDb()
+// Resolve a project by its id OR its (unique) name. Id is tried first so an
+// id can never be shadowed by a name; names are unique among live projects
+// (enforced in createProject/updateProject + a partial unique index).
+export function getProject(ref: string): Project {
+  const db = getDb();
+  const byId = db
     .prepare("SELECT * FROM projects WHERE id = ? AND deleted_at IS NULL")
-    .get(projectId) as Project | undefined;
-  if (!p) throw notFound("project");
-  return p;
+    .get(ref) as Project | undefined;
+  if (byId) return byId;
+  const byName = db
+    .prepare("SELECT * FROM projects WHERE name = ? AND deleted_at IS NULL")
+    .get(ref) as Project | undefined;
+  if (!byName) throw notFound("project");
+  return byName;
+}
+
+// Resolve any project ref (id or name) to its canonical id.
+export function resolveProjectId(ref: string): string {
+  return getProject(ref).id;
 }
 
 export function createProject(name: string, description?: string): Project {
   if (!name?.trim()) throw badRequest("name is required");
   const db = getDb();
+  const trimmed = name.trim();
+  const dup = db
+    .prepare("SELECT 1 FROM projects WHERE name = ? AND deleted_at IS NULL")
+    .get(trimmed);
+  if (dup) throw badRequest(`project name "${trimmed}" already exists`);
   const pid = id();
   const ts = now();
   const sm = buildDefaultStateMachine(pid);
@@ -38,7 +56,7 @@ export function createProject(name: string, description?: string): Project {
   const tx = db.transaction(() => {
     db.prepare(
       "INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?,?,?,?,?)"
-    ).run(pid, name.trim(), description ?? null, ts, ts);
+    ).run(pid, trimmed, description ?? null, ts, ts);
 
     const insStatus = db.prepare(
       "INSERT INTO statuses (id, project_id, key, label, sort_order, is_final) VALUES (?,?,?,?,?,?)"
@@ -64,14 +82,20 @@ export function updateProject(
   const name = patch.name?.trim() ?? p.name;
   const description =
     patch.description === undefined ? p.description : patch.description;
+  if (name !== p.name) {
+    const dup = getDb()
+      .prepare("SELECT 1 FROM projects WHERE name = ? AND id != ? AND deleted_at IS NULL")
+      .get(name, p.id);
+    if (dup) throw badRequest(`project name "${name}" already exists`);
+  }
   getDb()
     .prepare("UPDATE projects SET name=?, description=?, updated_at=? WHERE id=?")
-    .run(name, description, now(), projectId);
-  return getProject(projectId);
+    .run(name, description, now(), p.id);
+  return getProject(p.id);
 }
 
 export function softDeleteProject(projectId: string): { ok: true } {
-  getProject(projectId);
+  projectId = getProject(projectId).id;
   getDb()
     .prepare("UPDATE projects SET deleted_at=?, updated_at=? WHERE id=?")
     .run(now(), now(), projectId);
@@ -81,7 +105,7 @@ export function softDeleteProject(projectId: string): { ok: true } {
 // ---------------- State machine ----------------
 
 export function getStateMachine(projectId: string): StateMachine {
-  getProject(projectId);
+  projectId = getProject(projectId).id;
   const db = getDb();
   const statuses = (
     db
@@ -98,7 +122,7 @@ export function addStatus(
   projectId: string,
   data: { key: string; label: string; is_final?: boolean }
 ): StateMachine {
-  getProject(projectId);
+  projectId = getProject(projectId).id;
   const key = data.key?.trim();
   if (!key) throw badRequest("status key is required");
   const db = getDb();
@@ -121,6 +145,7 @@ export function updateStatus(
   key: string,
   patch: { label?: string; is_final?: boolean; sort_order?: number }
 ): StateMachine {
+  projectId = getProject(projectId).id;
   const sm = getStateMachine(projectId);
   const s = sm.statuses.find((x) => x.key === key);
   if (!s) throw notFound("status");
@@ -138,7 +163,7 @@ export function updateStatus(
 }
 
 export function removeStatus(projectId: string, key: string): StateMachine {
-  getProject(projectId);
+  projectId = getProject(projectId).id;
   const db = getDb();
   // Guard: cannot remove a status that live tasks still use.
   const inUse = db
@@ -160,6 +185,7 @@ export function addTransition(
   fromKey: string,
   toKey: string
 ): StateMachine {
+  projectId = getProject(projectId).id;
   const sm = getStateMachine(projectId);
   const has = (k: string) => sm.statuses.some((s) => s.key === k);
   if (!has(fromKey) || !has(toKey))
@@ -180,7 +206,7 @@ export function removeTransition(
   fromKey: string,
   toKey: string
 ): StateMachine {
-  getProject(projectId);
+  projectId = getProject(projectId).id;
   getDb()
     .prepare("DELETE FROM transitions WHERE project_id=? AND from_key=? AND to_key=?")
     .run(projectId, fromKey, toKey);
@@ -202,7 +228,7 @@ export function listTasks(
   projectId: string,
   opts: { status?: string; includeDeleted?: boolean } = {}
 ): Task[] {
-  getProject(projectId);
+  projectId = getProject(projectId).id;
   const clauses = ["project_id = ?"];
   const params: unknown[] = [projectId];
   if (!opts.includeDeleted) clauses.push("deleted_at IS NULL");
@@ -231,7 +257,7 @@ export function createTask(
   projectId: string,
   data: { title: string; description?: string; status?: string }
 ): Task {
-  getProject(projectId);
+  projectId = getProject(projectId).id;
   if (!data.title?.trim()) throw badRequest("title is required");
   const sm = getStateMachine(projectId);
   const statusKey = data.status ?? sm.statuses[0]?.key;

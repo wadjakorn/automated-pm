@@ -34,20 +34,23 @@ you cannot corrupt state by issuing a bad command — you get a JSON error inste
 
 ## Commands
 
+`--project` accepts a project **id or name** (names are unique among live
+projects); the server resolves either. Quote names with spaces.
+
 ```
-pm project create --name <name> [--description <text>]
+pm project create --name <name> [--description <text>]   # name must be unique
 pm project list
 
-pm status list --project <id>
-pm status add --project <id> --key <key> --label <label> [--final]
-pm status set-final --project <id> --key <key> --final <true|false>
-pm status remove --project <id> --key <key>
+pm status list --project <id|name>
+pm status add --project <id|name> --key <key> --label <label> [--final]
+pm status set-final --project <id|name> --key <key> --final <true|false>
+pm status remove --project <id|name> --key <key>
 
-pm transition add --project <id> --from <key> --to <key>
-pm transition remove --project <id> --from <key> --to <key>
+pm transition add --project <id|name> --from <key> --to <key>
+pm transition remove --project <id|name> --from <key> --to <key>
 
-pm task create --project <id> --title <title> [--description <text>] [--status <key>]
-pm task list --project <id> [--status <key>] [--include-deleted]
+pm task create --project <id|name> --title <title> [--description <text>] [--status <key>]
+pm task list --project <id|name> [--status <key>] [--include-deleted]
 pm task move --id <id> --status <key> [--version <n>]
 pm task update --id <id> [--title <t>] [--description <text>] [--version <n>]
 pm task delete --id <id>          # soft delete (recoverable)

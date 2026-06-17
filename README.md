@@ -70,6 +70,11 @@ pm status add --project $PID --key qa --label "QA"
 pm transition add --project $PID --from doing --to qa
 ```
 
+`--project` accepts a project **id or its name** — names are unique among live
+projects, so `--project "Website"` works anywhere an id does (quote names with
+spaces). Creating or renaming a project to a name already in use returns a
+`bad_request`.
+
 Without `npm link`, the same commands work via `npm run cli -- <args>`.
 
 Illegal moves (no transition, or out of a final state) return HTTP 422 with a reason.
