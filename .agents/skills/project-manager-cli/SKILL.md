@@ -1,0 +1,194 @@
+---
+name: project-manager-cli
+description: "Drive the Project Manager Kanban app (projects + tasks) from an LLM agent via the `pm` CLI. Covers the JSON/exit-code contract, the per-project state machine, optimistic locking (409), and soft delete/restore. Use when asked to create/move/update/delete tasks or projects, or to script board changes against a running Project Manager server."
+version: 1.0.0
+author: wadjakorn.tonsri
+license: MIT
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [kanban, cli, project-management, task-tracking, state-machine, json]
+    related_skills: [planning-methodology]
+---
+
+# Project Manager CLI (`pm`)
+
+Drive a browser-based Kanban app (projects + tasks) from the command line. The
+`pm` CLI talks to the **same local HTTP API the browser uses**, so anything you
+change shows up on the board after its poll (~4s). The server enforces every
+rule (state machine, optimistic locking, soft delete) — a bad command returns a
+JSON error, it cannot corrupt state.
+
+## When to use this skill
+
+- The user asks to create / list / move / update / delete projects or tasks.
+- The user wants to script or batch board changes (e.g. "create 5 backlog tasks").
+- The user asks why a move was rejected, or hits a `conflict` / `409`.
+- You need to inspect a project's columns and allowed transitions before acting.
+
+## 0. Prerequisites — check these FIRST
+
+1. **Server running.** The CLI hits `PM_API` (default `http://localhost:3000`).
+   If you see `{"error":"cli_error","message":"fetch failed"}`, the server is
+   down. Start it from the repo root with `npm run dev`, wait for
+   `http://localhost:3000`, then retry.
+2. **`pm` on PATH.** On a fresh machine run `npm run setup` once from the repo
+   — it installs deps + a global `tsx` + `npm link` + a `~/.local/bin` fallback
+   symlink, and is safe to re-run. No-install fallback: `npm run cli -- <args>`
+   from the repo (note the `--`).
+   - **`ERR_MODULE_NOT_FOUND: Cannot find package 'tsx'` when running `pm`
+     outside the repo?** This is the shebang, not a missing global package.
+     Older `cli/pm.ts` shipped `#!/usr/bin/env -S node --import tsx` — `node
+     --import tsx` resolves the bare `tsx` specifier against the **current
+     directory**, so it only works inside a dir whose `node_modules` has tsx.
+     Installing tsx globally does **not** fix it. Fix the interpreter line to
+     `#!/usr/bin/env -S tsx` (tsx as a PATH executable, cwd-independent) and
+     ensure a `tsx` binary is on PATH (`npm install -g tsx`). Then `pm` works
+     from any directory.
+3. **Non-default port.** Prefix every command: `PM_API=http://localhost:3001 pm ...`.
+
+Quick liveness check:
+
+```bash
+pm project list
+```
+
+Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
+
+## 1. Output & error contract
+
+- Every command prints **JSON to stdout**.
+- **Exit 0 = success**; **non-zero = failure** (and the JSON has an `error` field).
+- Always parse stdout as JSON and branch on `error`. Prefer `jq` when present;
+  the `sed` fallback in §4 is dependency-free.
+
+| `error` value        | HTTP | Meaning / what to do |
+|----------------------|------|----------------------|
+| `cli_error`          | —    | Network/usage problem (server down, missing flag). Read `message`. |
+| `bad_request`        | 400  | Invalid input (empty title, removing an in-use status, orphaning a task). |
+| `not_found`          | 404  | Bad id. Re-list to get a correct one. |
+| `illegal_transition` | 422  | Move not allowed by the state machine. `message` says why. |
+| `conflict`           | 409  | Optimistic-lock failure. `current` holds the fresh row — re-read, then retry with the new `version`. |
+
+## 2. Command reference
+
+```
+pm project create --name <name> [--description <text>]
+pm project list
+
+pm status list   --project <id>
+pm status add    --project <id> --key <key> --label <label> [--final]
+pm status set-final --project <id> --key <key> --final <true|false>
+pm status remove --project <id> --key <key>
+
+pm transition add    --project <id> --from <key> --to <key>
+pm transition remove --project <id> --from <key> --to <key>
+
+pm task create  --project <id> --title <title> [--description <text>] [--status <key>]
+pm task list    --project <id> [--status <key>] [--include-deleted]
+pm task move    --id <id> --status <key> [--version <n>]
+pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>]
+pm task delete  --id <id>          # soft delete (recoverable)
+pm task restore --id <id>
+```
+
+## 3. Rules you MUST respect
+
+- **State machine is per project.** Default chain:
+  `backlog → todo → doing → completed → tested → released`. `released` is
+  **final** — no moves out of it. Moves only succeed along defined edges.
+- **Discover the real graph before moving.** A project may have customized
+  statuses/edges. Run `pm status list --project <id>` and read the returned
+  `statuses` (each has `is_final`) and `transitions` (`from_key`→`to_key`)
+  instead of assuming defaults. Move ONE legal step at a time.
+- **Optimistic locking.** `--version` is optional. Omit it → CLI reads the
+  current version then writes (convenient, last-writer-wins). Pass `--version`
+  when you must not clobber a concurrent edit; on stale you get `conflict` with
+  the current row — reconcile and retry with the fresh `version`.
+- **Soft delete only.** `pm task delete` sets `deleted_at`; the task vanishes
+  from normal lists but is recoverable via `pm task restore`. Find deleted ones
+  with `pm task list --project <id> --include-deleted` (filter `deleted_at != null`).
+- **Status edits are guarded.** Removing a status or edge that an existing task
+  depends on returns `bad_request` — the server refuses to orphan a task.
+
+## 4. Typical workflow
+
+```bash
+# 1. Find or create the project, capture its id (jq preferred)
+pm project list
+PID=$(pm project create --name "Sprint 12" | jq -r .id)
+# dependency-free fallback if no jq:
+# PID=$(pm project create --name "Sprint 12" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+
+# 2. Inspect the state machine BEFORE moving anything
+pm status list --project "$PID"
+
+# 3. Create a task (defaults to first status, usually backlog)
+TID=$(pm task create --project "$PID" --title "Write API tests" | jq -r .id)
+
+# 4. Move it forward, one legal step at a time
+pm task move --id "$TID" --status todo
+pm task move --id "$TID" --status doing
+
+# 5. Edit fields
+pm task update --id "$TID" --description "cover the 409 path"
+
+# 6. List current board state
+pm task list --project "$PID"
+```
+
+## 5. Handling a conflict (409)
+
+When you pass `--version` and it's stale:
+
+```bash
+pm task move --id "$TID" --status doing --version 3
+# -> {"error":"conflict","current":{...,"version":5,"status_key":"todo"}}, non-zero exit
+```
+
+Recovery: read `current` from the payload, decide whether your change still
+applies, then retry with the fresh version:
+
+```bash
+pm task move --id "$TID" --status doing --version 5
+```
+
+If you don't care about clobbering, just omit `--version` and the CLI handles
+the read-then-write for you.
+
+## 6. Pitfalls (learn these once)
+
+- **Forgetting `--` with the npm fallback.** `npm run cli project list` passes
+  args to npm, not `pm`. Use `npm run cli -- project list`.
+- **Assuming default statuses.** Always `pm status list` first — a project may
+  have added `qa` / removed `tested` / changed which state is final.
+- **Multi-step moves in one call.** There is no multi-hop move. `backlog →
+  doing` directly fails with `illegal_transition` unless an edge exists. Step
+  through each legal transition.
+- **Treating soft delete as gone.** A "missing" task may just be soft-deleted.
+  Check with `--include-deleted` before recreating it (avoids duplicates).
+- **Server not started.** `fetch failed` is almost always the server being down,
+  not a CLI bug. Start `npm run dev` and retry.
+- **`Cannot find package 'tsx'` outside the repo.** Shebang bug, not a missing
+  install — see §0.2. Use `#!/usr/bin/env -S tsx`, not `node --import tsx`.
+  Until fixed, `npm run cli -- <args>` from the repo always works.
+- **Wrong port.** If the dev server picked another port (3001+), every command
+  needs `PM_API=http://localhost:<port>`.
+
+## 7. Verification (know when you're done)
+
+Run this end-to-end against a running server; it exercises every rule:
+
+```bash
+PID=$(pm project create --name "skill-verify" | jq -r .id)
+TID=$(pm task create --project "$PID" --title "demo" | jq -r .id)
+pm task move --id "$TID" --status todo            # exit 0 (legal)
+pm task move --id "$TID" --status released         # non-zero, illegal_transition (no direct edge)
+pm task delete --id "$TID"                          # exit 0, soft delete
+pm task list --project "$PID" --include-deleted    # shows it with deleted_at set
+pm task restore --id "$TID"                         # exit 0, back on board
+```
+
+Pass criteria: legal move exits 0; the illegal jump exits non-zero with
+`{"error":"illegal_transition"}`; the deleted task appears only under
+`--include-deleted`; restore returns it to a normal list.
