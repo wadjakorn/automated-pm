@@ -15,8 +15,9 @@ export function GET(req: NextRequest, { params }: Ctx) {
 }
 
 // PATCH handles both edits and moves.
-// { title?, description?, status?, rank?, version? }
+// { title?, description?, status?, rank?, version?, assignee? }
 // If `status` is present it's a move (transition-checked); otherwise an edit.
+// `assignee`: omit = unchanged, null/"" = unassign, id|username = assign.
 export function PATCH(req: NextRequest, { params }: Ctx) {
   return handle(async () => {
     const { id } = await params;

@@ -36,6 +36,29 @@ export interface Task {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  // Attribution (nullable, backward compat). *_username are joined for display
+  // and are not stored columns.
+  creator_id: string | null;
+  assignee_id: string | null;
+  creator_username: string | null;
+  assignee_username: string | null;
+}
+
+// A user account. password_hash and api_token are secrets — never serialize
+// them to clients. PublicUser is the safe shape returned by the API.
+export interface User {
+  id: string;
+  username: string;
+  password_hash: string;
+  api_token: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublicUser {
+  id: string;
+  username: string;
+  created_at: string;
 }
 
 // A project's full state machine: ordered statuses + allowed transition edges.

@@ -13,7 +13,7 @@ import {
 } from "@dnd-kit/core";
 import type { Task, StateMachine } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
-import { useProjects, usePoll } from "./useApp";
+import { useProjects, usePoll, useUsers } from "./useApp";
 import { Nav } from "./Nav";
 import { TaskCard } from "./TaskCard";
 import { EditDrawer } from "./EditDrawer";
@@ -98,6 +98,7 @@ function Column({
 
 export function Board() {
   const { projects, selectedId, select, reload, loaded } = useProjects();
+  const { users } = useUsers();
   const [sm, setSm] = useState<StateMachine | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [active, setActive] = useState<Task | null>(null);
@@ -219,6 +220,7 @@ export function Board() {
         <EditDrawer
           task={editing}
           sm={sm}
+          users={users}
           onClose={() => setEditing(null)}
           onChanged={() => selectedId && loadTasks(selectedId)}
         />

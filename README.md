@@ -3,7 +3,9 @@
 Browser Kanban board with a per-project **state machine**, **soft delete**, optimistic
 locking, and a JSON **CLI** so an LLM agent can drive the same data the browser shows.
 
-- No login. All users have the same permissions.
+- **Optional login** (username/password). Auth is additive — the board and CLI
+  work fully without it; signing in just attributes who **created** and who is
+  **assigned** a task. No roles; all users have the same permissions.
 - Dark mode first.
 - Default statuses: `backlog → todo → doing → completed → tested → released` (released is final).
 - State machine (statuses, transitions, final flags) is **per project** and editable in Settings.
@@ -68,12 +70,25 @@ pm task restore --id <task id>
 pm status list --project $PID
 pm status add --project $PID --key qa --label "QA"
 pm transition add --project $PID --from doing --to qa
+
+# optional auth (attributes creator/assignee)
+pm user create --username alice --password secret   # -> { user, api_token }
+export PM_TOKEN=<api_token>                          # creator of new tasks = alice
+pm task create --project $PID --title "Triage bug" --assignee alice
+pm task list --project $PID --assignee alice
 ```
 
 `--project` accepts a project **id or its name** — names are unique among live
 projects, so `--project "Website"` works anywhere an id does (quote names with
 spaces). Creating or renaming a project to a name already in use returns a
 `bad_request`.
+
+**Login is optional.** Without `PM_TOKEN` (or a browser session) everything
+still works — tasks just have a `null` creator/assignee. Create an account with
+`pm user create` (or the `/register` page in the browser), then set
+`PM_TOKEN=<api_token>` so the CLI attributes new tasks to you. `--assignee`
+takes a user id or username. Browser sessions use an httpOnly cookie (30 days);
+the CLI token does not expire.
 
 Without `npm link`, the same commands work via `npm run cli -- <args>`.
 
@@ -83,6 +98,7 @@ Concurrent edits are guarded by an optimistic `version`; a stale write returns 4
 ## Layout
 
 - `lib/statemachine.ts` — single source of truth for transition rules (unit tested).
+- `lib/auth.ts` — scrypt password hashing + session/token → user resolution.
 - `lib/repo.ts` — SQLite data access (soft-delete aware, version checks).
 - `app/api/**` — REST endpoints used by both the browser and the CLI.
 - `cli/pm.ts` — flag-based CLI → API.

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
+import { useAuth } from "./useApp";
 import { toast } from "./Toast";
 
 // Top bar: project switcher + create + nav links. Selected project is carried
@@ -21,8 +22,19 @@ export function Nav({
   onProjectsChanged: () => void;
 }) {
   const pathname = usePathname();
+  const { user, refresh } = useAuth();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+
+  async function logout() {
+    try {
+      await api.logout();
+      await refresh();
+      toast("Logged out", "success");
+    } catch (e: any) {
+      toast(e.message ?? "Logout failed", "error");
+    }
+  }
 
   const link = (href: string, label: string) => {
     const active = pathname === href;
@@ -106,6 +118,33 @@ export function Nav({
         {link("/", "Board")}
         {link("/settings", "Settings")}
         {link("/trash", "Trash")}
+        <span className="mx-1 h-5 w-px bg-border" />
+        {user ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-300">👤 {user.username}</span>
+            <button
+              onClick={logout}
+              className="rounded px-2 py-1.5 text-sm text-gray-400 hover:text-gray-200"
+            >
+              Logout
+            </button>
+          </div>
+        ) : (
+          <>
+            <Link
+              href="/login"
+              className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200"
+            >
+              Login
+            </Link>
+            <Link
+              href="/register"
+              className="rounded border border-border px-3 py-1.5 text-sm text-gray-300 hover:bg-bg-card"
+            >
+              Register
+            </Link>
+          </>
+        )}
       </nav>
     </header>
   );

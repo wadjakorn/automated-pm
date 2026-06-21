@@ -37,6 +37,14 @@ export function TaskCard({
           {task.description}
         </div>
       )}
+      {task.assignee_username && (
+        <div className="mt-2 flex items-center gap-1 text-[11px] text-gray-400">
+          <span className="grid h-4 w-4 place-items-center rounded-full bg-blue-600 text-[9px] font-semibold uppercase text-white">
+            {task.assignee_username[0]}
+          </span>
+          {task.assignee_username}
+        </div>
+      )}
     </div>
   );
 }

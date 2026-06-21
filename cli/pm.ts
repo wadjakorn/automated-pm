@@ -8,6 +8,9 @@
  */
 
 const BASE = process.env.PM_API ?? "http://localhost:3000";
+// Optional auth: if PM_TOKEN is set, send it as a bearer token so created tasks
+// are attributed to that user. Anonymous (no token) still works.
+const TOKEN = process.env.PM_TOKEN;
 
 type Flags = Record<string, string | boolean>;
 
@@ -42,9 +45,12 @@ async function api(
   path: string,
   body?: unknown
 ): Promise<{ status: number; json: any }> {
+  const headers: Record<string, string> = {};
+  if (body) headers["content-type"] = "application/json";
+  if (TOKEN) headers["authorization"] = `Bearer ${TOKEN}`;
   const res = await fetch(BASE + path, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   let json: any = null;
@@ -74,6 +80,12 @@ const proj = (f: Flags): string => encodeURIComponent(need(f, "project"));
 
 const HELP = `pm — Project Manager CLI
 
+  # Auth is OPTIONAL. Set PM_TOKEN=<api_token> to attribute created tasks to you.
+  pm user create --username <u> --password <p>   # -> { user, api_token }
+  pm user list
+  pm login --username <u> --password <p>          # -> { api_token }; export PM_TOKEN
+  pm whoami                                        # current user (needs PM_TOKEN) or null
+
   pm project create --name <name> [--description <text>]
   pm project list
 
@@ -86,21 +98,46 @@ const HELP = `pm — Project Manager CLI
   pm transition add --project <id|name> --from <key> --to <key>
   pm transition remove --project <id|name> --from <key> --to <key>
 
-  pm task create --project <id|name> --title <title> [--description <text>] [--status <key>]
-  pm task list --project <id|name> [--status <key>] [--include-deleted]
+  # --assignee accepts a user id OR username
+  pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
+  pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
   pm task move --id <id> --status <key> [--version <n>]
-  pm task update --id <id> [--title <t>] [--description <text>] [--version <n>]
+  pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
   pm task delete --id <id>
   pm task restore --id <id>
 `;
 
 async function main() {
   const [, , group, action, ...rest] = process.argv;
-  const f = parseFlags(rest);
 
   if (!group || group === "help" || group === "--help") out({ help: HELP }, 0);
 
+  // Single-word commands: `action` is actually the first flag, so parse flags
+  // from [action, ...rest].
+  if (group === "login" || group === "whoami") {
+    const lf = parseFlags([action, ...rest].filter((x): x is string => !!x));
+    if (group === "whoami") return unwrap(await api("GET", "/api/auth/me"));
+    return unwrap(
+      await api("POST", "/api/auth/login", {
+        username: need(lf, "username"),
+        password: need(lf, "password"),
+      })
+    );
+  }
+
+  const f = parseFlags(rest);
+
   switch (`${group} ${action}`) {
+    case "user create":
+      return unwrap(
+        await api("POST", "/api/auth/register", {
+          username: need(f, "username"),
+          password: need(f, "password"),
+        })
+      );
+    case "user list":
+      return unwrap(await api("GET", "/api/users"));
+
     case "project create":
       return unwrap(
         await api("POST", "/api/projects", {
@@ -160,12 +197,14 @@ async function main() {
           title: need(f, "title"),
           description: f.description,
           status: f.status,
+          assignee: typeof f.assignee === "string" ? f.assignee : undefined,
         })
       );
     case "task list": {
       const qs = new URLSearchParams({ project: need(f, "project") });
       if (typeof f.status === "string") qs.set("status", f.status);
       if (f["include-deleted"]) qs.set("includeDeleted", "true");
+      if (typeof f.assignee === "string") qs.set("assignee", f.assignee);
       return unwrap(await api("GET", `/api/tasks?${qs.toString()}`));
     }
     case "task move":
@@ -175,14 +214,20 @@ async function main() {
           version: f.version !== undefined ? Number(f.version) : undefined,
         })
       );
-    case "task update":
+    case "task update": {
+      // assignee: --assignee <ref> sets it; --unassign clears it; neither omits.
+      let assignee: string | null | undefined;
+      if (f.unassign) assignee = null;
+      else if (typeof f.assignee === "string") assignee = f.assignee;
       return unwrap(
         await api("PATCH", `/api/tasks/${need(f, "id")}`, {
           title: f.title,
           description: f.description,
           version: f.version !== undefined ? Number(f.version) : undefined,
+          assignee,
         })
       );
+    }
     case "task delete":
       return unwrap(await api("DELETE", `/api/tasks/${need(f, "id")}`));
     case "task restore":

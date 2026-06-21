@@ -10,3 +10,5 @@ data/
 next-env.d.ts
 tsconfig.tsbuildinfo
 .playwright-mcp/
+.env
+.env.local

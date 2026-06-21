@@ -137,6 +137,30 @@ Settings page: manage statuses + transition matrix. Trash page: list soft-delete
 - Run: `npm install && npm run dev` -> http://localhost:3000;
   `npm run cli -- project list` from a second shell.
 
+## Addendum: Auth + task attribution (added 2026-06-21)
+
+Supersedes the original "no login" decision — login is now **optional and
+additive**. Every endpoint still works unauthenticated (CLI/agents unchanged);
+identity, when present, fills new nullable columns.
+
+- **Mechanism:** browser → httpOnly session cookie (`pm_session`, 30-day TTL);
+  CLI/agent → `Authorization: Bearer <api_token>` from `PM_TOKEN` (token
+  non-expiring). Anonymous still allowed.
+- **Password hashing:** `node:crypto` scrypt, salted, stored `scrypt$<salt>$<hash>`.
+  No new dependency.
+- **Provisioning:** `pm user create` + `/register` page. No admin role.
+- **Data model:** `users(id, username UNIQUE, password_hash, api_token UNIQUE,
+  created_at, updated_at)`, `sessions(id, user_id, created_at, expires_at)`.
+  `tasks` gains nullable `creator_id` / `assignee_id` (FK users) via idempotent
+  `ALTER TABLE` — old rows stay NULL.
+- **Endpoints:** `POST /api/auth/register|login|logout`, `GET /api/auth/me`,
+  `GET /api/users`. `POST /api/tasks` sets `creator_id` from caller + optional
+  `assignee`; `PATCH` accepts `assignee` (null = unassign); `GET /api/tasks`
+  takes `?assignee=<id|username>`.
+- **CLI:** `pm user create|list`, `pm login`, `pm whoami`; `task create/list`
+  gain `--assignee <id|username>`, `task update` gains `--assignee`/`--unassign`.
+- **Assignment:** assignee must be an existing user (validated). User deletion deferred.
+
 ## Deferred (YAGNI — do not build now)
-No auth. No hard purge of trash. No SSE/websocket (polling only). No single-binary
-packaging.
+No hard purge of trash. No SSE/websocket (polling only). No single-binary
+packaging. User delete/soft-delete, password reset, roles, token rotation.

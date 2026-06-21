@@ -2,8 +2,43 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Project } from "@/lib/types";
+import type { Project, PublicUser } from "@/lib/types";
 import { api } from "@/lib/client";
+
+// Current user (or null when anonymous). Auth is optional, so null is normal.
+export function useAuth() {
+  const [user, setUser] = useState<PublicUser | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const refresh = useCallback(async () => {
+    try {
+      setUser(await api.me());
+    } catch {
+      setUser(null);
+    } finally {
+      setLoaded(true);
+    }
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+  return { user, loaded, refresh };
+}
+
+// All users, for assignee pickers.
+export function useUsers() {
+  const [users, setUsers] = useState<PublicUser[]>([]);
+  const reload = useCallback(async () => {
+    try {
+      setUsers(await api.listUsers());
+    } catch {
+      setUsers([]);
+    }
+  }, []);
+  useEffect(() => {
+    reload();
+  }, [reload]);
+  return { users, reload };
+}
 
 // Loads projects and tracks the selected one via the ?project= query string,
 // falling back to the first project. Returns a setter that updates the URL.

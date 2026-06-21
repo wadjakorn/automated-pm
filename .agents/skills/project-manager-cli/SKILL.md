@@ -69,6 +69,7 @@ Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
 | `not_found`          | 404  | Bad id. Re-list to get a correct one. |
 | `illegal_transition` | 422  | Move not allowed by the state machine. `message` says why. |
 | `conflict`           | 409  | Optimistic-lock failure. `current` holds the fresh row — re-read, then retry with the new `version`. |
+| `unauthorized`       | 401  | Bad login credentials (`pm login` with a wrong password). |
 
 ## 2. Command reference
 
@@ -76,7 +77,18 @@ Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
 projects). `--project 'My Site'` and `--project qgYkAVRhbeVh` are equivalent —
 the server resolves either, id first. Quote names with spaces.
 
+**Auth is OPTIONAL/ADDITIVE.** Every command works anonymously. Set
+`PM_TOKEN=<api_token>` to attribute created tasks to a user (`creator_id`).
+`--assignee` takes a user id OR username. Anonymous tasks have `null`
+creator/assignee — that is normal, not an error.
+
 ```
+# auth (optional)
+pm user create --username <u> --password <p>   # -> { user, api_token }
+pm user list
+pm login --username <u> --password <p>          # -> { api_token }; export PM_TOKEN
+pm whoami                                        # current user (needs PM_TOKEN) or null
+
 pm project create --name <name> [--description <text>]   # name must be unique
 pm project list
 
@@ -88,10 +100,10 @@ pm status remove --project <id|name> --key <key>
 pm transition add    --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
-pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>]
-pm task list    --project <id|name> [--status <key>] [--include-deleted]
+pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
+pm task list    --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
 pm task move    --id <id> --status <key> [--version <n>]
-pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>]
+pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
 pm task delete  --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
 ```
@@ -118,6 +130,11 @@ pm task restore --id <id>
   projects, so you can address one by name (`--project 'My Site'`) instead of
   copying its id. Creating/renaming to a name already taken returns
   `bad_request`. A name frees up once its project is trashed.
+- **Auth is optional; identity is attribution only.** No command requires a
+  login. With `PM_TOKEN` set, new tasks get `creator_id` = that user. `--assignee
+  <id|username>` must name an existing user (else `not_found`); `--unassign`
+  clears it. There are no roles — auth never grants or denies access, it only
+  records who created/owns a task. User deletion is not implemented yet.
 
 ## 4. Typical workflow
 
