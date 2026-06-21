@@ -1,30 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Task, StateMachine } from "@/lib/types";
+import type { Task, StateMachine, PublicUser } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
 import { toast } from "./Toast";
 
-// Slide-over drawer to edit a task: title, description, status move, delete.
+// Slide-over drawer to edit a task: title, description, assignee, status move,
+// delete.
 export function EditDrawer({
   task,
   sm,
+  users,
   onClose,
   onChanged,
 }: {
   task: Task;
   sm: StateMachine;
+  users: PublicUser[];
   onClose: () => void;
   onChanged: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
+  const [assignee, setAssignee] = useState(task.assignee_id ?? "");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setTitle(task.title);
     setDescription(task.description ?? "");
+    setAssignee(task.assignee_id ?? "");
   }, [task]);
 
   const targets = allowedTargets(sm, task.status_key);
@@ -48,7 +53,11 @@ export function EditDrawer({
     withBusy(async () => {
       await api.updateTask(
         task.id,
-        { title: title.trim(), description: description || null },
+        {
+          title: title.trim(),
+          description: description || null,
+          assignee: assignee || null,
+        },
         task.version
       );
       toast("Saved", "success");
@@ -100,6 +109,20 @@ export function EditDrawer({
           className="resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
         />
 
+        <label className="text-xs text-gray-400">Assignee</label>
+        <select
+          value={assignee}
+          onChange={(e) => setAssignee(e.target.value)}
+          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-gray-200 outline-none"
+        >
+          <option value="">Unassigned</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.username}
+            </option>
+          ))}
+        </select>
+
         <div>
           <div className="mb-1 text-xs text-gray-400">
             Status: <span className="text-gray-200">{statusLabel(task.status_key)}</span>
@@ -142,6 +165,7 @@ export function EditDrawer({
         </div>
         <div className="text-[10px] text-gray-600">
           id {task.id} · v{task.version}
+          {task.creator_username && <> · created by {task.creator_username}</>}
         </div>
       </div>
     </div>

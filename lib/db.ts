@@ -61,10 +61,40 @@ function migrate(db: Database.Database) {
       deleted_at  TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS users (
+      id            TEXT PRIMARY KEY,
+      username      TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      api_token     TEXT NOT NULL UNIQUE,
+      created_at    TEXT NOT NULL,
+      updated_at    TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_statuses_project ON statuses(project_id);
     CREATE INDEX IF NOT EXISTS idx_transitions_project ON transitions(project_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `);
+
+  // Task attribution columns are added by ALTER so existing DBs migrate in
+  // place. Nullable + no default → old rows stay NULL (backward compat).
+  // Idempotent via a table_info check since SQLite lacks ADD COLUMN IF NOT EXISTS.
+  const taskCols = new Set(
+    (db.prepare("PRAGMA table_info(tasks)").all() as { name: string }[]).map((c) => c.name)
+  );
+  if (!taskCols.has("creator_id")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN creator_id TEXT REFERENCES users(id)");
+  }
+  if (!taskCols.has("assignee_id")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN assignee_id TEXT REFERENCES users(id)");
+  }
 
   // Project names are unique among live (non-deleted) projects, so `--project`
   // can take a name instead of an id. Partial index ignores soft-deleted rows,

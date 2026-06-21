@@ -1,6 +1,6 @@
 // Browser-side typed fetch helpers. Throw an ApiClientError carrying the
 // parsed JSON body so callers can branch on .code (e.g. conflict, illegal).
-import type { Project, Task, StateMachine } from "./types";
+import type { Project, Task, StateMachine, PublicUser } from "./types";
 
 export class ApiClientError extends Error {
   status: number;
@@ -27,6 +27,18 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
+  // auth (cookie-based; browser uses the session, no token handling here)
+  me: () => req<PublicUser | null>("GET", "/api/auth/me"),
+  login: (username: string, password: string) =>
+    req<{ user: PublicUser }>("POST", "/api/auth/login", { username, password }),
+  register: (username: string, password: string) =>
+    req<{ user: PublicUser; api_token: string }>("POST", "/api/auth/register", {
+      username,
+      password,
+    }),
+  logout: () => req<{ ok: true }>("POST", "/api/auth/logout"),
+  listUsers: () => req<PublicUser[]>("GET", "/api/users"),
+
   // projects
   listProjects: () => req<Project[]>("GET", "/api/projects"),
   createProject: (name: string, description?: string) =>
@@ -72,13 +84,25 @@ export const api = {
       "GET",
       `/api/tasks?project=${projectId}${includeDeleted ? "&includeDeleted=true" : ""}`
     ),
-  createTask: (projectId: string, title: string, description?: string, status?: string) =>
-    req<Task>("POST", "/api/tasks", { project: projectId, title, description, status }),
+  createTask: (
+    projectId: string,
+    title: string,
+    description?: string,
+    status?: string,
+    assignee?: string | null
+  ) =>
+    req<Task>("POST", "/api/tasks", {
+      project: projectId,
+      title,
+      description,
+      status,
+      assignee,
+    }),
   moveTask: (id: string, status: string, version: number) =>
     req<Task>("PATCH", `/api/tasks/${id}`, { status, version }),
   updateTask: (
     id: string,
-    patch: { title?: string; description?: string | null },
+    patch: { title?: string; description?: string | null; assignee?: string | null },
     version: number
   ) => req<Task>("PATCH", `/api/tasks/${id}`, { ...patch, version }),
   deleteTask: (id: string) => req<{ ok: true }>("DELETE", `/api/tasks/${id}`),

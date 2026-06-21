@@ -31,6 +31,24 @@ you cannot corrupt state by issuing a bad command — you get a JSON error inste
 | `not_found`           | 404  | Bad id. |
 | `illegal_transition`  | 422  | Move not allowed by the state machine. `message` says why. |
 | `conflict`            | 409  | Optimistic-lock failure. `current` holds the fresh row — re-read and retry with the new `version`. |
+| `unauthorized`        | 401  | Bad login credentials. |
+
+## Auth (optional)
+
+Auth is **additive** — every command works without logging in. Set
+`PM_TOKEN=<api_token>` and the CLI sends it as a bearer token so tasks you
+create are attributed to you (`creator_id`). Get a token once:
+
+```
+pm user create --username <u> --password <p>   # -> { user, api_token }
+pm login --username <u> --password <p>          # -> { api_token }
+pm whoami                                        # current user (needs PM_TOKEN) or null
+pm user list                                     # id + username for --assignee
+export PM_TOKEN=<api_token>
+```
+
+Anonymous tasks (no `PM_TOKEN`) have `creator_id`/`assignee_id` = `null` —
+this is the default and fully supported.
 
 ## Commands
 
@@ -49,13 +67,16 @@ pm status remove --project <id|name> --key <key>
 pm transition add --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
-pm task create --project <id|name> --title <title> [--description <text>] [--status <key>]
-pm task list --project <id|name> [--status <key>] [--include-deleted]
+pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
+pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
 pm task move --id <id> --status <key> [--version <n>]
-pm task update --id <id> [--title <t>] [--description <text>] [--version <n>]
+pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
 pm task delete --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
 ```
+
+`--assignee` accepts a user **id or username**; assignee must be an existing
+user. Creator is set from `PM_TOKEN` (the authenticated caller), not a flag.
 
 ## Key rules you must respect
 
