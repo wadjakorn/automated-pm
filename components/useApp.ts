@@ -134,7 +134,8 @@ export function useTaskRoute() {
     (id: string) => {
       const sp = new URLSearchParams(Array.from(params.entries()));
       sp.set("task", id);
-      router.push(`?${sp.toString()}`);
+      const qs = sp.toString();
+      router.push(qs ? `?${qs}` : window.location.pathname);
     },
     [params, router]
   );
@@ -142,7 +143,8 @@ export function useTaskRoute() {
   const closeTask = useCallback(() => {
     const sp = new URLSearchParams(Array.from(params.entries()));
     sp.delete("task");
-    router.replace(`?${sp.toString()}`);
+    const qs = sp.toString();
+    router.replace(qs ? `?${qs}` : window.location.pathname);
   }, [params, router]);
 
   return { taskParam, openTask, closeTask };

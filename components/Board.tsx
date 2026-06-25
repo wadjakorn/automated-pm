@@ -101,6 +101,10 @@ export function Board() {
   const { projects, selectedId, select, reload, loaded } = useProjects();
   const { taskParam, openTask, closeTask } = useTaskRoute();
   const resolvingRef = useRef<string | null>(null);
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  const closeTaskRef = useRef(closeTask);
+  closeTaskRef.current = closeTask;
   const { users } = useUsers();
   const [sm, setSm] = useState<StateMachine | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -136,6 +140,7 @@ export function Board() {
 
   // The `task` URL param is the source of truth for the open drawer.
   useEffect(() => {
+    if (resolvingRef.current !== null) return; // a deep-link fetch is in flight; don't re-enter
     const action = resolveTicketAction(taskParam, tasks, editing?.id ?? null);
     if (action.kind === "noop") return;
     if (action.kind === "close") {
@@ -152,17 +157,17 @@ export function Board() {
     api
       .getTask(taskParam)
       .then((t) => {
-        if (t.project_id !== selectedId) select(t.project_id);
+        if (t.project_id !== selectedId) selectRef.current(t.project_id);
         setEditing(t);
       })
       .catch(() => {
         toast("Ticket not found", "error");
-        closeTask();
+        closeTaskRef.current();
       })
       .finally(() => {
         resolvingRef.current = null;
       });
-  }, [taskParam, tasks, selectedId, editing, select, closeTask]);
+  }, [taskParam, tasks, selectedId, editing]);
 
   function onDragStart(e: DragStartEvent) {
     setDragging(true);
