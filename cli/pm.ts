@@ -122,6 +122,8 @@ const HELP = `pm — Project Manager CLI
   pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
   pm task delete --id <id>
   pm task restore --id <id>
+
+  pm board --project <id|name>          # columns view: tasks grouped by status
 `;
 
 const VERSION = (() => {
@@ -134,8 +136,20 @@ const VERSION = (() => {
 
 const ALIAS: Record<string, string> = { ls: "list", mv: "move", rm: "delete" };
 
-async function board(_f: Flags): Promise<never> {
-  return fail("board not implemented yet");
+async function board(f: Flags): Promise<never> {
+  const ref = need(f, "project");
+  const pid = encodeURIComponent(ref);
+  const smR = await api("GET", `/api/projects/${pid}/statuses`);
+  if (!(smR.status >= 200 && smR.status < 300)) return emit("board", smR); // renders error
+  const tR = await api("GET", `/api/tasks?project=${pid}`);
+  if (!(tR.status >= 200 && tR.status < 300)) return emit("board", tR);
+  const statuses = smR.json.statuses ?? [];
+  const tasks = (tR.json ?? []) as any[];
+  const columns = statuses.map((s: any) => ({
+    status: s,
+    tasks: tasks.filter((t) => t.status_key === s.key),
+  }));
+  return emit("board", { status: 200, json: { project: ref, columns } });
 }
 
 async function main() {
