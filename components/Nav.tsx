@@ -7,6 +7,8 @@ import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { useAuth } from "./useApp";
 import { toast } from "./Toast";
+import { useTheme } from "./ThemeProvider";
+import { nextChoice } from "./theme";
 
 // Top bar: project switcher + create + nav links. Selected project is carried
 // in the ?project= query string so it survives navigation across pages.
@@ -23,6 +25,9 @@ export function Nav({
 }) {
   const pathname = usePathname();
   const { user, refresh } = useAuth();
+  const { choice, setChoice, resolved } = useTheme();
+  const themeIcon = resolved === "dark" ? "🌙" : "☀️";
+  const themeLabel = `Theme: ${choice}`;
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
 
@@ -118,6 +123,14 @@ export function Nav({
         {link("/", "Board")}
         {link("/settings", "Settings")}
         {link("/trash", "Trash")}
+        <button
+          onClick={() => setChoice(nextChoice(choice))}
+          title={themeLabel}
+          aria-label={themeLabel}
+          className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
+        >
+          {themeIcon}
+        </button>
         <span className="mx-1 h-5 w-px bg-border" />
         {user ? (
           <div className="flex items-center gap-2">
