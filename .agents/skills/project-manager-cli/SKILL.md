@@ -71,6 +71,14 @@ Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
 | `conflict`           | 409  | Optimistic-lock failure. `current` holds the fresh row — re-read, then retry with the new `version`. |
 | `unauthorized`       | 401  | Bad login credentials (`pm login` with a wrong password). |
 
+- **Output is TTY-aware.** A pipe/redirect (non-TTY) prints **JSON** — so the
+  `jq`/`sed` recipes below are unchanged. An interactive terminal prints pretty
+  tables/board. Force a mode with `--json` (always JSON, even on a TTY) or
+  `--pretty`; disable color with `--no-color` or `NO_COLOR`. Agents should pass
+  `--json` when they need to be certain, though piped output is already JSON.
+- **Global flags:** `--api <url>` (overrides `PM_API`), `--version`, plus the
+  output flags above. They may appear in any position.
+
 ## 2. Command reference
 
 `--project` accepts a **project id OR its name** (names are unique among live
@@ -101,11 +109,22 @@ pm transition add    --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
 pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
+pm task create  --project <id|name> --stdin              # one task per non-empty stdin line
 pm task list    --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
 pm task move    --id <id> --status <key> [--version <n>]
 pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
 pm task delete  --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
+
+pm board        --project <id|name>                      # columns view: tasks grouped by status
+
+pm project update --project <id|name> [--name <new>] [--description <text>]
+pm project delete --project <id|name>                    # soft delete (recoverable via the UI/Trash)
+
+pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>]
+#   generalizes `status set-final`; `set-final` still works.
+
+# Action aliases: ls=list, mv=move, rm=delete  (e.g. `pm task ls --project demo`)
 ```
 
 ## 3. Rules you MUST respect
@@ -199,6 +218,9 @@ the read-then-write for you.
   Until fixed, `npm run cli -- <args>` from the repo always works.
 - **Wrong port.** If the dev server picked another port (3001+), every command
   needs `PM_API=http://localhost:<port>`.
+- **Pretty vs JSON.** If you script `pm` and parse stdout, you already get JSON
+  (non-TTY). Only humans in a terminal see tables. Never parse pretty output —
+  pass `--json` if unsure.
 
 ## 7. Verification (know when you're done)
 

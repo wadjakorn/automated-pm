@@ -20,8 +20,13 @@ you cannot corrupt state by issuing a bad command — you get a JSON error inste
 
 ## Output & error contract
 
-- Every command prints **JSON to stdout**.
+- Output is **TTY-aware**: piped/redirected (non-TTY) stdout prints **JSON**, so
+  agent parsing is unchanged; an interactive terminal prints pretty tables/board.
+  Pass `--json` to force JSON anywhere (`--pretty` forces tables;
+  `--no-color`/`NO_COLOR` disable color).
 - **Exit 0** = success; **non-zero** = failure (JSON has an `error` field).
+- **Global flags** (any position): `--json`, `--pretty`, `--no-color`,
+  `--api <url>` (overrides `PM_API`), `--version`.
 - Parse stdout as JSON. Branch on `error`:
 
 | `error` value         | HTTP | Meaning / what to do |
@@ -73,6 +78,17 @@ pm task move --id <id> --status <key> [--version <n>]
 pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
 pm task delete --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
+pm task create --project <id|name> --stdin          # one task per non-empty stdin line
+
+pm board --project <id|name>                        # columns view: tasks grouped by status
+
+pm project update --project <id|name> [--name <new>] [--description <text>]
+pm project delete --project <id|name>               # soft delete (recoverable via UI/Trash)
+
+pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>]
+#   generalizes `status set-final`; set-final still works.
+
+# Action aliases: ls=list, mv=move, rm=delete  (e.g. pm task ls --project demo)
 ```
 
 `--assignee` accepts a user **id or username**; assignee must be an existing
