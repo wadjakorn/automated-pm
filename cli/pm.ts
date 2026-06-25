@@ -164,7 +164,7 @@ async function main() {
   const [group, rawAction, ...rest] = R.argv;
   const action = ALIAS[rawAction] ?? rawAction;
 
-  if (!group || group === "help") {
+  if (!group || group === "help" || group === "--help") {
     if (R.mode === "json") process.stdout.write(JSON.stringify({ help: HELP }, null, 2) + "\n");
     else process.stdout.write(HELP + "\n");
     process.exit(0);

@@ -39,6 +39,7 @@ export function resolveGlobals(input: {
   }
 
   const mode: Mode = json ? "json" : pretty ? "pretty" : isTTY ? "pretty" : "json";
-  const color = mode === "pretty" && !noColor && !env.NO_COLOR;
+  // NO_COLOR disables color by PRESENCE (any value, incl. empty) per no-color.org.
+  const color = mode === "pretty" && !noColor && env.NO_COLOR === undefined;
   return { mode, color, api, argv: rest, showVersion };
 }

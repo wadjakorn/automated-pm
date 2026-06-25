@@ -30,6 +30,8 @@ describe("resolveGlobals", () => {
     expect(resolveGlobals({ ...base, isTTY: true, argv: ["x"] }).color).toBe(true);
     expect(resolveGlobals({ ...base, isTTY: true, argv: ["x", "--no-color"] }).color).toBe(false);
     expect(resolveGlobals({ isTTY: true, env: { NO_COLOR: "1" }, argv: ["x"] }).color).toBe(false);
+    // NO_COLOR disables by presence, even when empty (no-color.org).
+    expect(resolveGlobals({ isTTY: true, env: { NO_COLOR: "" }, argv: ["x"] }).color).toBe(false);
     expect(resolveGlobals({ ...base, argv: ["x", "--pretty"] }).color).toBe(true);
   });
 
