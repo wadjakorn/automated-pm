@@ -1,15 +1,23 @@
 #!/usr/bin/env -S tsx
 /**
  * pm — flag-based CLI for the Project Manager API.
- * Every command prints JSON to stdout. Exit 0 on success, non-zero on error.
- * All state-machine rules are enforced server-side, so the CLI inherits them.
+ * Output is TTY-aware: a terminal gets pretty tables, a pipe gets JSON.
+ * `--json`/`--pretty` force a mode; `--no-color` / NO_COLOR disable color.
+ * Exit 0 on success, non-zero on error. All rules are enforced server-side.
  *
- * Base URL from PM_API (default http://localhost:3000).
+ * Base URL: --api <url>, else PM_API, else http://localhost:3000.
  */
+import { readFileSync } from "node:fs";
+import { resolveGlobals } from "./mode";
+import { render, renderError, type Kind } from "./render";
 
-const BASE = process.env.PM_API ?? "http://localhost:3000";
-// Optional auth: if PM_TOKEN is set, send it as a bearer token so created tasks
-// are attributed to that user. Anonymous (no token) still works.
+const R = resolveGlobals({
+  argv: process.argv.slice(2),
+  isTTY: !!process.stdout.isTTY,
+  env: process.env,
+});
+const BASE = R.api;
+// Optional auth: PM_TOKEN attributes created tasks to that user.
 const TOKEN = process.env.PM_TOKEN;
 
 type Flags = Record<string, string | boolean>;
@@ -21,9 +29,8 @@ function parseFlags(argv: string[]): Flags {
     if (!tok.startsWith("--")) continue;
     const key = tok.slice(2);
     const next = argv[i + 1];
-    if (next === undefined || next.startsWith("--")) {
-      flags[key] = true; // boolean flag
-    } else {
+    if (next === undefined || next.startsWith("--")) flags[key] = true;
+    else {
       flags[key] = next;
       i++;
     }
@@ -31,13 +38,18 @@ function parseFlags(argv: string[]): Flags {
   return flags;
 }
 
-function out(data: unknown, code = 0): never {
-  process.stdout.write(JSON.stringify(data, null, 2) + "\n");
-  process.exit(code);
+// Render an API response and exit. Success → render(kind); failure → renderError.
+function emit(kind: Kind, r: { status: number; json: any }): never {
+  const ok = r.status >= 200 && r.status < 300;
+  const data = r.json ?? (ok ? { ok: true } : { error: "http_" + r.status });
+  const text = ok ? render(kind, data, R) : renderError(data, R);
+  process.stdout.write(text + "\n");
+  process.exit(ok ? 0 : 1);
 }
 
 function fail(message: string, extra: Record<string, unknown> = {}): never {
-  out({ error: "cli_error", message, ...extra }, 1);
+  process.stdout.write(renderError({ error: "cli_error", message, ...extra }, R) + "\n");
+  process.exit(1);
 }
 
 async function api(
@@ -48,24 +60,26 @@ async function api(
   const headers: Record<string, string> = {};
   if (body) headers["content-type"] = "application/json";
   if (TOKEN) headers["authorization"] = `Bearer ${TOKEN}`;
-  const res = await fetch(BASE + path, {
-    method,
-    headers: Object.keys(headers).length ? headers : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  let json: any = null;
   try {
-    json = await res.json();
-  } catch {
-    json = null;
+    const res = await fetch(BASE + path, {
+      method,
+      headers: Object.keys(headers).length ? headers : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let json: any = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+    return { status: res.status, json };
+  } catch (e: any) {
+    // Network failure (server down): surface a clear, hinted cli_error.
+    return {
+      status: 0,
+      json: { error: "cli_error", message: `Cannot reach ${BASE}: ${e?.message ?? e}` },
+    };
   }
-  return { status: res.status, json };
-}
-
-// Unwrap an API response: success -> data, error -> exit non-zero with JSON.
-function unwrap(r: { status: number; json: any }): never {
-  if (r.status >= 200 && r.status < 300) out(r.json, 0);
-  out(r.json ?? { error: "http_" + r.status }, 1);
 }
 
 const need = (f: Flags, k: string): string => {
@@ -107,51 +121,81 @@ const HELP = `pm — Project Manager CLI
   pm task restore --id <id>
 `;
 
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  } catch {
+    return "0.0.0";
+  }
+})();
+
+const ALIAS: Record<string, string> = { ls: "list", mv: "move", rm: "delete" };
+
+async function board(_f: Flags): Promise<never> {
+  return fail("board not implemented yet");
+}
+
 async function main() {
-  const [, , group, action, ...rest] = process.argv;
+  if (R.showVersion) {
+    process.stdout.write(`pm ${VERSION}\n`);
+    process.exit(0);
+  }
 
-  if (!group || group === "help" || group === "--help") out({ help: HELP }, 0);
+  const [group, rawAction, ...rest] = R.argv;
+  const action = ALIAS[rawAction] ?? rawAction;
 
-  // Single-word commands: `action` is actually the first flag, so parse flags
-  // from [action, ...rest].
-  if (group === "login" || group === "whoami") {
-    const lf = parseFlags([action, ...rest].filter((x): x is string => !!x));
-    if (group === "whoami") return unwrap(await api("GET", "/api/auth/me"));
-    return unwrap(
-      await api("POST", "/api/auth/login", {
-        username: need(lf, "username"),
-        password: need(lf, "password"),
-      })
-    );
+  if (!group || group === "help") {
+    if (R.mode === "json") process.stdout.write(JSON.stringify({ help: HELP }, null, 2) + "\n");
+    else process.stdout.write(HELP + "\n");
+    process.exit(0);
+  }
+
+  // Single-word commands: flags live in [rawAction, ...rest].
+  if (group === "login" || group === "whoami" || group === "board") {
+    const sf = parseFlags([rawAction, ...rest].filter((x): x is string => !!x));
+    if (group === "whoami") return emit("raw", await api("GET", "/api/auth/me"));
+    if (group === "login")
+      return emit(
+        "raw",
+        await api("POST", "/api/auth/login", {
+          username: need(sf, "username"),
+          password: need(sf, "password"),
+        })
+      );
+    // board — Task 7 fills this in.
+    return board(sf);
   }
 
   const f = parseFlags(rest);
 
   switch (`${group} ${action}`) {
     case "user create":
-      return unwrap(
+      return emit(
+        "raw",
         await api("POST", "/api/auth/register", {
           username: need(f, "username"),
           password: need(f, "password"),
         })
       );
     case "user list":
-      return unwrap(await api("GET", "/api/users"));
+      return emit("raw", await api("GET", "/api/users"));
 
     case "project create":
-      return unwrap(
+      return emit(
+        "project",
         await api("POST", "/api/projects", {
           name: need(f, "name"),
           description: f.description,
         })
       );
     case "project list":
-      return unwrap(await api("GET", "/api/projects"));
+      return emit("projects", await api("GET", "/api/projects"));
 
     case "status list":
-      return unwrap(await api("GET", `/api/projects/${proj(f)}/statuses`));
+      return emit("statemachine", await api("GET", `/api/projects/${proj(f)}/statuses`));
     case "status add":
-      return unwrap(
+      return emit(
+        "statemachine",
         await api("POST", `/api/projects/${proj(f)}/statuses`, {
           key: need(f, "key"),
           label: f.label,
@@ -159,14 +203,16 @@ async function main() {
         })
       );
     case "status set-final":
-      return unwrap(
+      return emit(
+        "statemachine",
         await api("PATCH", `/api/projects/${proj(f)}/statuses`, {
           key: need(f, "key"),
           is_final: f.final === "true" || f.final === true,
         })
       );
     case "status remove":
-      return unwrap(
+      return emit(
+        "statemachine",
         await api(
           "DELETE",
           `/api/projects/${proj(f)}/statuses?key=${encodeURIComponent(need(f, "key"))}`
@@ -174,14 +220,16 @@ async function main() {
       );
 
     case "transition add":
-      return unwrap(
+      return emit(
+        "statemachine",
         await api("POST", `/api/projects/${proj(f)}/transitions`, {
           from: need(f, "from"),
           to: need(f, "to"),
         })
       );
     case "transition remove":
-      return unwrap(
+      return emit(
+        "statemachine",
         await api(
           "DELETE",
           `/api/projects/${proj(f)}/transitions?from=${encodeURIComponent(
@@ -191,7 +239,8 @@ async function main() {
       );
 
     case "task create":
-      return unwrap(
+      return emit(
+        "task",
         await api("POST", "/api/tasks", {
           project: need(f, "project"),
           title: need(f, "title"),
@@ -205,10 +254,11 @@ async function main() {
       if (typeof f.status === "string") qs.set("status", f.status);
       if (f["include-deleted"]) qs.set("includeDeleted", "true");
       if (typeof f.assignee === "string") qs.set("assignee", f.assignee);
-      return unwrap(await api("GET", `/api/tasks?${qs.toString()}`));
+      return emit("tasks", await api("GET", `/api/tasks?${qs.toString()}`));
     }
     case "task move":
-      return unwrap(
+      return emit(
+        "task",
         await api("PATCH", `/api/tasks/${need(f, "id")}`, {
           status: need(f, "status"),
           version: f.version !== undefined ? Number(f.version) : undefined,
@@ -219,7 +269,8 @@ async function main() {
       let assignee: string | null | undefined;
       if (f.unassign) assignee = null;
       else if (typeof f.assignee === "string") assignee = f.assignee;
-      return unwrap(
+      return emit(
+        "task",
         await api("PATCH", `/api/tasks/${need(f, "id")}`, {
           title: f.title,
           description: f.description,
@@ -229,9 +280,9 @@ async function main() {
       );
     }
     case "task delete":
-      return unwrap(await api("DELETE", `/api/tasks/${need(f, "id")}`));
+      return emit("ok", await api("DELETE", `/api/tasks/${need(f, "id")}`));
     case "task restore":
-      return unwrap(await api("POST", `/api/tasks/${need(f, "id")}/restore`));
+      return emit("task", await api("POST", `/api/tasks/${need(f, "id")}/restore`));
 
     default:
       fail(`unknown command "${group} ${action}"`, { help: HELP });
