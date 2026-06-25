@@ -47,18 +47,18 @@ function Column({
   return (
     <div className="flex w-72 shrink-0 flex-col rounded-lg bg-bg-soft">
       <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
+        <div className="flex items-center gap-2 text-sm font-medium text-fg">
           {label}
           {isFinal && (
             <span className="rounded bg-bg-card px-1.5 py-0.5 text-[10px] text-amber-400">
               final
             </span>
           )}
-          <span className="text-xs text-gray-500">{tasks.length}</span>
+          <span className="text-xs text-fg-subtle">{tasks.length}</span>
         </div>
         <button
           onClick={() => setAdding(true)}
-          className="text-gray-500 hover:text-gray-200"
+          className="text-fg-subtle hover:text-fg"
           title="Add task"
         >
           +
@@ -67,7 +67,7 @@ function Column({
       <div
         ref={setNodeRef}
         className={`flex min-h-[60px] flex-1 flex-col gap-2 p-2 ${
-          isOver ? "rounded-lg bg-bg-card/60 ring-1 ring-blue-600" : ""
+          isOver ? "rounded-lg bg-bg-card/60 ring-1 ring-accent" : ""
         }`}
       >
         {adding && (
@@ -184,7 +184,7 @@ export function Board() {
       />
 
       {!selectedId ? (
-        <div className="flex flex-1 items-center justify-center text-gray-500">
+        <div className="flex flex-1 items-center justify-center text-fg-subtle">
           {loaded ? "Create a project to begin." : "Loading…"}
         </div>
       ) : (

@@ -98,7 +98,15 @@ pm task move --id <id> --status doing [--version N]
 pm task update --id <id> [--title ...] [--description ...] [--version N]
 pm task delete --id <id>          # soft
 pm task restore --id <id>
-Every command prints JSON; exit 0 ok / non-zero on error.
+pm task create --project <id|name> --stdin                # one task per stdin line
+pm board --project <id|name>                              # columns grouped by status
+pm project update --project <id|name> [--name <new>] [--description ...]
+pm project delete --project <id|name>                     # soft delete
+pm status update --project <id|name> --key <key> [--label ...] [--final <bool>] [--order N]
+# aliases: ls=list, mv=move, rm=delete
+Output is TTY-aware: piped/non-TTY stdout = JSON (parsing unchanged); a terminal
+gets pretty tables. Force with --json / --pretty; --api <url> overrides PM_API;
+--version prints the version. Exit 0 ok / non-zero on error.
 
 Make `pm` a standalone command: shebang `#!/usr/bin/env -S tsx` on cli/pm.ts
 (run tsx as the interpreter — a PATH executable; do NOT use `node --import tsx`,

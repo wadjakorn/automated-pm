@@ -7,6 +7,8 @@ import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { useAuth } from "./useApp";
 import { toast } from "./Toast";
+import { useTheme } from "./ThemeProvider";
+import { nextChoice } from "./theme";
 
 // Top bar: project switcher + create + nav links. Selected project is carried
 // in the ?project= query string so it survives navigation across pages.
@@ -23,6 +25,9 @@ export function Nav({
 }) {
   const pathname = usePathname();
   const { user, refresh } = useAuth();
+  const { choice, setChoice, resolved } = useTheme();
+  const themeIcon = resolved === "dark" ? "🌙" : "☀️";
+  const themeLabel = `Theme: ${choice}`;
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
 
@@ -43,7 +48,7 @@ export function Nav({
       <Link
         href={href + q}
         className={`rounded px-3 py-1.5 text-sm ${
-          active ? "bg-bg-card text-white" : "text-gray-400 hover:text-gray-200"
+          active ? "bg-bg-card text-fg" : "text-fg-muted hover:text-fg"
         }`}
       >
         {label}
@@ -67,12 +72,12 @@ export function Nav({
 
   return (
     <header className="flex items-center gap-4 border-b border-border bg-bg-soft px-5 py-3">
-      <span className="font-semibold text-white">📋 PM</span>
+      <span className="font-semibold text-fg">📋 PM</span>
 
       <select
         value={selectedId ?? ""}
         onChange={(e) => onSelect(e.target.value)}
-        className="rounded border border-border bg-bg-card px-2 py-1.5 text-sm text-gray-200 outline-none"
+        className="rounded border border-border bg-bg-card px-2 py-1.5 text-sm text-fg outline-none"
       >
         {projects.length === 0 && <option value="">No projects</option>}
         {projects.map((p) => (
@@ -94,13 +99,13 @@ export function Nav({
           />
           <button
             onClick={create}
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500"
+            className="rounded bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
           >
             Add
           </button>
           <button
             onClick={() => setCreating(false)}
-            className="text-sm text-gray-400 hover:text-gray-200"
+            className="text-sm text-fg-muted hover:text-fg"
           >
             Cancel
           </button>
@@ -108,7 +113,7 @@ export function Nav({
       ) : (
         <button
           onClick={() => setCreating(true)}
-          className="rounded border border-border px-3 py-1.5 text-sm text-gray-300 hover:bg-bg-card"
+          className="rounded border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-card"
         >
           + New project
         </button>
@@ -118,13 +123,21 @@ export function Nav({
         {link("/", "Board")}
         {link("/settings", "Settings")}
         {link("/trash", "Trash")}
+        <button
+          onClick={() => setChoice(nextChoice(choice))}
+          title={themeLabel}
+          aria-label={themeLabel}
+          className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
+        >
+          {themeIcon}
+        </button>
         <span className="mx-1 h-5 w-px bg-border" />
         {user ? (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-300">👤 {user.username}</span>
+            <span className="text-sm text-fg-muted">👤 {user.username}</span>
             <button
               onClick={logout}
-              className="rounded px-2 py-1.5 text-sm text-gray-400 hover:text-gray-200"
+              className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
             >
               Logout
             </button>
@@ -133,13 +146,13 @@ export function Nav({
           <>
             <Link
               href="/login"
-              className="rounded px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200"
+              className="rounded px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
             >
               Login
             </Link>
             <Link
               href="/register"
-              className="rounded border border-border px-3 py-1.5 text-sm text-gray-300 hover:bg-bg-card"
+              className="rounded border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-card"
             >
               Register
             </Link>
