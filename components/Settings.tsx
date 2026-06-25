@@ -32,7 +32,7 @@ export function Settings() {
   if (!selectedId)
     return (
       <Shell {...{ projects, selectedId, select, reload }}>
-        <div className="p-6 text-gray-500">
+        <div className="p-6 text-fg-subtle">
           {loaded ? "Create a project first." : "Loading…"}
         </div>
       </Shell>
@@ -47,14 +47,14 @@ export function Settings() {
       <div className="mx-auto max-w-4xl space-y-8 p-6">
         {/* Statuses */}
         <section>
-          <h2 className="mb-3 text-lg font-semibold text-white">Statuses</h2>
+          <h2 className="mb-3 text-lg font-semibold text-fg">Statuses</h2>
           <div className="space-y-2">
             {statuses.map((s, i) => (
               <div
                 key={s.key}
                 className="flex items-center gap-3 rounded border border-border bg-bg-soft px-3 py-2"
               >
-                <span className="w-32 text-xs text-gray-500">{s.key}</span>
+                <span className="w-32 text-xs text-fg-subtle">{s.key}</span>
                 <input
                   value={s.label}
                   onChange={(e) =>
@@ -76,7 +76,7 @@ export function Settings() {
                   }
                   className="flex-1 rounded border border-border bg-bg-card px-2 py-1 text-sm outline-none"
                 />
-                <label className="flex items-center gap-1 text-xs text-gray-400">
+                <label className="flex items-center gap-1 text-xs text-fg-muted">
                   <input
                     type="checkbox"
                     checked={s.is_final}
@@ -104,7 +104,7 @@ export function Settings() {
                         });
                       })
                     }
-                    className="rounded px-1.5 text-gray-400 hover:text-white disabled:opacity-30"
+                    className="rounded px-1.5 text-fg-muted hover:text-fg disabled:opacity-30"
                   >
                     ↑
                   </button>
@@ -121,7 +121,7 @@ export function Settings() {
                         });
                       })
                     }
-                    className="rounded px-1.5 text-gray-400 hover:text-white disabled:opacity-30"
+                    className="rounded px-1.5 text-fg-muted hover:text-fg disabled:opacity-30"
                   >
                     ↓
                   </button>
@@ -165,7 +165,7 @@ export function Settings() {
                   return r;
                 })
               }
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500"
+              className="rounded bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
             >
               Add status
             </button>
@@ -174,10 +174,10 @@ export function Settings() {
 
         {/* Transition matrix */}
         <section>
-          <h2 className="mb-1 text-lg font-semibold text-white">
+          <h2 className="mb-1 text-lg font-semibold text-fg">
             Allowed transitions
           </h2>
-          <p className="mb-3 text-xs text-gray-500">
+          <p className="mb-3 text-xs text-fg-subtle">
             Row = from, column = to. Check to allow that move. Final statuses are
             locked at move time regardless.
           </p>
@@ -185,9 +185,9 @@ export function Settings() {
             <table className="text-xs">
               <thead>
                 <tr>
-                  <th className="p-2 text-left text-gray-500">from \ to</th>
+                  <th className="p-2 text-left text-fg-subtle">from \ to</th>
                   {statuses.map((c) => (
-                    <th key={c.key} className="p-2 text-gray-400">
+                    <th key={c.key} className="p-2 text-fg-muted">
                       {c.label}
                     </th>
                   ))}
@@ -196,11 +196,11 @@ export function Settings() {
               <tbody>
                 {statuses.map((r) => (
                   <tr key={r.key}>
-                    <td className="p-2 text-gray-400">{r.label}</td>
+                    <td className="p-2 text-fg-muted">{r.label}</td>
                     {statuses.map((c) => (
                       <td key={c.key} className="p-2 text-center">
                         {r.key === c.key ? (
-                          <span className="text-gray-700">—</span>
+                          <span className="text-fg-subtle">—</span>
                         ) : (
                           <input
                             type="checkbox"

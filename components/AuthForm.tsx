@@ -43,8 +43,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   if (token) {
     return (
       <div className="mx-auto mt-24 flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-bg-soft p-6">
-        <h1 className="text-lg font-semibold text-white">Account created</h1>
-        <p className="text-sm text-gray-400">
+        <h1 className="text-lg font-semibold text-fg">Account created</h1>
+        <p className="text-sm text-fg-muted">
           Your API token (for the <code>pm</code> CLI). Copy it now — it is shown
           only once. Set <code>PM_TOKEN</code> to use it.
         </p>
@@ -53,7 +53,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         </code>
         <button
           onClick={() => router.push("/")}
-          className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500"
+          className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
         >
           Go to board
         </button>
@@ -66,11 +66,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       onSubmit={submit}
       className="mx-auto mt-24 flex w-full max-w-sm flex-col gap-4 rounded-lg border border-border bg-bg-soft p-6"
     >
-      <h1 className="text-lg font-semibold text-white">
+      <h1 className="text-lg font-semibold text-fg">
         {isRegister ? "Create account" : "Log in"}
       </h1>
 
-      <label className="text-xs text-gray-400">Username</label>
+      <label className="text-xs text-fg-muted">Username</label>
       <input
         autoFocus
         value={username}
@@ -79,7 +79,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
       />
 
-      <label className="text-xs text-gray-400">Password</label>
+      <label className="text-xs text-fg-muted">Password</label>
       <input
         type="password"
         value={password}
@@ -91,23 +91,23 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       <button
         type="submit"
         disabled={busy}
-        className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
+        className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
       >
         {isRegister ? "Register" : "Log in"}
       </button>
 
-      <div className="text-center text-xs text-gray-500">
+      <div className="text-center text-xs text-fg-subtle">
         {isRegister ? (
           <>
             Have an account?{" "}
-            <Link href="/login" className="text-blue-400 hover:underline">
+            <Link href="/login" className="text-accent hover:underline">
               Log in
             </Link>
           </>
         ) : (
           <>
             No account?{" "}
-            <Link href="/register" className="text-blue-400 hover:underline">
+            <Link href="/register" className="text-accent hover:underline">
               Register
             </Link>
           </>
