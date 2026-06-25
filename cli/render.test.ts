@@ -70,6 +70,14 @@ describe("renderError", () => {
   });
 });
 
+describe("renderError cli_error", () => {
+  it("hints to start the server", () => {
+    const out = renderError({ error: "cli_error", message: "Cannot reach http://x" }, pretty);
+    expect(out).toContain("✗ cli_error");
+    expect(out).toContain("npm run dev");
+  });
+});
+
 describe("render board", () => {
   it("renders one block per column with task bullets", () => {
     const data = {
