@@ -122,3 +122,30 @@ export function usePoll(fn: () => void | Promise<void>, deps: unknown[], ms = 40
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 }
+
+// Reads the `task` query param and exposes setters that push/strip it.
+// openTask pushes (so browser Back closes the drawer); closeTask replaces.
+export function useTaskRoute() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const taskParam = params.get("task");
+
+  const openTask = useCallback(
+    (id: string) => {
+      const sp = new URLSearchParams(Array.from(params.entries()));
+      sp.set("task", id);
+      const qs = sp.toString();
+      router.push(qs ? `?${qs}` : window.location.pathname);
+    },
+    [params, router]
+  );
+
+  const closeTask = useCallback(() => {
+    const sp = new URLSearchParams(Array.from(params.entries()));
+    sp.delete("task");
+    const qs = sp.toString();
+    router.replace(qs ? `?${qs}` : window.location.pathname);
+  }, [params, router]);
+
+  return { taskParam, openTask, closeTask };
+}
