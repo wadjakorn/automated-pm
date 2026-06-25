@@ -2,20 +2,24 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: "class",
-  content: [
-    "./app/**/*.{ts,tsx}",
-    "./components/**/*.{ts,tsx}",
-  ],
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
         bg: {
-          DEFAULT: "#0d1117",
-          soft: "#161b22",
-          card: "#1c2128",
+          DEFAULT: "var(--bg)",
+          soft: "var(--bg-soft)",
+          card: "var(--bg-card)",
         },
-        border: {
-          DEFAULT: "#30363d",
+        border: { DEFAULT: "var(--border)" },
+        fg: {
+          DEFAULT: "var(--fg)",
+          muted: "var(--fg-muted)",
+          subtle: "var(--fg-subtle)",
+        },
+        accent: {
+          DEFAULT: "var(--accent)",
+          hover: "var(--accent-hover)",
         },
       },
     },

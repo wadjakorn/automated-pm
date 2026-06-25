@@ -89,7 +89,7 @@ export function EditDrawer({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-white">Edit task</h2>
+          <h2 className="font-semibold text-fg">Edit task</h2>
           <div className="flex items-center gap-3">
             <button
               onClick={async () => {
@@ -101,25 +101,25 @@ export function EditDrawer({
                   toast(link, "success"); // fallback: surface the link to copy manually
                 }
               }}
-              className="text-xs text-gray-400 hover:text-gray-200"
+              className="text-xs text-fg-muted hover:text-fg"
               title="Copy link to this ticket"
             >
               🔗 Copy link
             </button>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-200">
+            <button onClick={onClose} className="text-fg-muted hover:text-fg">
               ✕
             </button>
           </div>
         </div>
 
-        <label className="text-xs text-gray-400">Title</label>
+        <label className="text-xs text-fg-muted">Title</label>
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
         />
 
-        <label className="text-xs text-gray-400">Description</label>
+        <label className="text-xs text-fg-muted">Description</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -127,11 +127,11 @@ export function EditDrawer({
           className="resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
         />
 
-        <label className="text-xs text-gray-400">Assignee</label>
+        <label className="text-xs text-fg-muted">Assignee</label>
         <select
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
-          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-gray-200 outline-none"
+          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none"
         >
           <option value="">Unassigned</option>
           {users.map((u) => (
@@ -142,11 +142,11 @@ export function EditDrawer({
         </select>
 
         <div>
-          <div className="mb-1 text-xs text-gray-400">
-            Status: <span className="text-gray-200">{statusLabel(task.status_key)}</span>
+          <div className="mb-1 text-xs text-fg-muted">
+            Status: <span className="text-fg">{statusLabel(task.status_key)}</span>
           </div>
           {targets.length === 0 ? (
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-fg-subtle">
               No moves available (final state).
             </div>
           ) : (
@@ -156,7 +156,7 @@ export function EditDrawer({
                   key={to}
                   disabled={busy}
                   onClick={() => move(to)}
-                  className="rounded border border-border px-2.5 py-1 text-xs text-gray-200 hover:bg-bg-card"
+                  className="rounded border border-border px-2.5 py-1 text-xs text-fg hover:bg-bg-card"
                 >
                   → {statusLabel(to)}
                 </button>
@@ -176,12 +176,12 @@ export function EditDrawer({
           <button
             disabled={busy}
             onClick={save}
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500"
+            className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
           >
             Save
           </button>
         </div>
-        <div className="text-[10px] text-gray-600">
+        <div className="text-[10px] text-fg-subtle">
           id {task.id} · v{task.version}
           {task.creator_username && <> · created by {task.creator_username}</>}
         </div>

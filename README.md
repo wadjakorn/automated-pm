@@ -27,8 +27,9 @@ Open http://localhost:3000. SQLite data is stored at `./data/pm.db`.
 
 The CLI talks to the **running server** (`PM_API`, default `http://localhost:3000`).
 Start the server first (`npm run dev`) — otherwise commands fail with
-`{"error":"cli_error","message":"fetch failed"}`. Every command prints JSON and
-exits non-zero on error.
+`{"error":"cli_error","message":"fetch failed"}`. Output is TTY-aware — piped
+output is JSON (so scripts/`jq` keep working), an interactive terminal prints
+pretty tables; pass `--json` to force JSON anywhere. Exit non-zero on error.
 
 > **Driving this from an LLM agent?** See [`AGENTS.md`](AGENTS.md) for the full
 > command reference, JSON/error contract, and the rules (state machine,
@@ -65,10 +66,18 @@ pm task list --project $PID
 pm task move --id <task id> --status todo
 pm task delete --id <task id>
 pm task restore --id <task id>
+pm board --project $PID                              # columns view (tasks by status)
+printf 'task one\ntask two\n' | pm task create --project $PID --stdin   # bulk
+# aliases: pm task ls / mv / rm
+
+# projects
+pm project update --project $PID --description "updated"
+pm project delete --project $PID                    # soft delete
 
 # state machine
 pm status list --project $PID
 pm status add --project $PID --key qa --label "QA"
+pm status update --project $PID --key qa --label "Quality" --order 3
 pm transition add --project $PID --from doing --to qa
 
 # optional auth (attributes creator/assignee)
