@@ -84,6 +84,7 @@ export const api = {
       "GET",
       `/api/tasks?project=${projectId}${includeDeleted ? "&includeDeleted=true" : ""}`
     ),
+  getTask: (id: string) => req<Task>("GET", `/api/tasks/${id}`),
   createTask: (
     projectId: string,
     title: string,
