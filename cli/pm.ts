@@ -117,6 +117,8 @@ const HELP = `pm — Project Manager CLI
 
   # --assignee accepts a user id OR username
   pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
+  pm task create --project <id|name> --stdin   # one task per non-empty stdin line
+  # aliases: \`ls\`=list, \`mv\`=move, \`rm\`=delete (e.g. pm task ls --project demo)
   pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
   pm task move --id <id> --status <key> [--version <n>]
   pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
@@ -134,7 +136,7 @@ const VERSION = (() => {
   }
 })();
 
-const ALIAS: Record<string, string> = { ls: "list", mv: "move", rm: "delete" };
+export const ALIAS: Record<string, string> = { ls: "list", mv: "move", rm: "delete" };
 
 async function board(f: Flags): Promise<never> {
   const ref = need(f, "project");
@@ -276,7 +278,25 @@ async function main() {
         )
       );
 
-    case "task create":
+    case "task create": {
+      if (f.stdin) {
+        const titles = readFileSync(0, "utf8")
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const created: any[] = [];
+        for (const title of titles) {
+          const r = await api("POST", "/api/tasks", {
+            project: need(f, "project"),
+            title,
+            status: typeof f.status === "string" ? f.status : undefined,
+            assignee: typeof f.assignee === "string" ? f.assignee : undefined,
+          });
+          if (!(r.status >= 200 && r.status < 300)) return emit("task", r); // surface first error
+          created.push(r.json);
+        }
+        return emit("tasks", { status: 200, json: created });
+      }
       return emit(
         "task",
         await api("POST", "/api/tasks", {
@@ -287,6 +307,7 @@ async function main() {
           assignee: typeof f.assignee === "string" ? f.assignee : undefined,
         })
       );
+    }
     case "task list": {
       const qs = new URLSearchParams({ project: need(f, "project") });
       if (typeof f.status === "string") qs.set("status", f.status);
@@ -327,4 +348,6 @@ async function main() {
   }
 }
 
-main().catch((e) => fail(String(e?.message ?? e)));
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => fail(String(e?.message ?? e)));
+}
