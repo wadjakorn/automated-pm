@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +13,8 @@ import {
 } from "@dnd-kit/core";
 import type { Task, StateMachine } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
-import { useProjects, usePoll, useUsers } from "./useApp";
+import { useProjects, usePoll, useUsers, useTaskRoute } from "./useApp";
+import { resolveTicketAction } from "@/lib/ticket-link";
 import { Nav } from "./Nav";
 import { TaskCard } from "./TaskCard";
 import { EditDrawer } from "./EditDrawer";
@@ -98,6 +99,8 @@ function Column({
 
 export function Board() {
   const { projects, selectedId, select, reload, loaded } = useProjects();
+  const { taskParam, openTask, closeTask } = useTaskRoute();
+  const resolvingRef = useRef<string | null>(null);
   const { users } = useUsers();
   const [sm, setSm] = useState<StateMachine | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -130,6 +133,36 @@ export function Board() {
     },
     [selectedId, dragging, editing]
   );
+
+  // The `task` URL param is the source of truth for the open drawer.
+  useEffect(() => {
+    const action = resolveTicketAction(taskParam, tasks, editing?.id ?? null);
+    if (action.kind === "noop") return;
+    if (action.kind === "close") {
+      setEditing(null);
+      return;
+    }
+    if (action.kind === "open-local") {
+      setEditing(action.task);
+      return;
+    }
+    // action.kind === "fetch": deep link to a task not in the loaded list.
+    if (!taskParam || resolvingRef.current === taskParam) return;
+    resolvingRef.current = taskParam;
+    api
+      .getTask(taskParam)
+      .then((t) => {
+        if (t.project_id !== selectedId) select(t.project_id);
+        setEditing(t);
+      })
+      .catch(() => {
+        toast("Ticket not found", "error");
+        closeTask();
+      })
+      .finally(() => {
+        resolvingRef.current = null;
+      });
+  }, [taskParam, tasks, selectedId, editing, select, closeTask]);
 
   function onDragStart(e: DragStartEvent) {
     setDragging(true);
@@ -205,7 +238,7 @@ export function Board() {
                 label={s.label}
                 isFinal={s.is_final}
                 tasks={byStatus(s.key)}
-                onOpen={setEditing}
+                onOpen={(t) => openTask(t.id)}
                 onAdd={addTask}
               />
             ))}
@@ -216,12 +249,12 @@ export function Board() {
         </DndContext>
       )}
 
-      {editing && sm && (
+      {editing && sm && sm.statuses[0]?.project_id === editing.project_id && (
         <EditDrawer
           task={editing}
           sm={sm}
           users={users}
-          onClose={() => setEditing(null)}
+          onClose={closeTask}
           onChanged={() => selectedId && loadTasks(selectedId)}
         />
       )}
