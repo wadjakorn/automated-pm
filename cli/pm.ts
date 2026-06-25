@@ -7,7 +7,8 @@
  *
  * Base URL: --api <url>, else PM_API, else http://localhost:3000.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { resolveGlobals } from "./mode";
 import { render, renderError, type Kind } from "./render";
 
@@ -348,6 +349,17 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Only run main() when this file is the entry point — resolve symlinks so the
+// installed `pm` bin (a symlink to this file) still executes, while `import`
+// from a test does not.
+function isEntrypoint(): boolean {
+  try {
+    return !!process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint()) {
   main().catch((e) => fail(String(e?.message ?? e)));
 }
