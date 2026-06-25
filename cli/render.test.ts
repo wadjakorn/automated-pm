@@ -69,3 +69,20 @@ describe("renderError", () => {
     expect(renderError({ error: "conflict", message: "stale" }, pretty)).toContain("version");
   });
 });
+
+describe("render board", () => {
+  it("renders one block per column with task bullets", () => {
+    const data = {
+      columns: [
+        { status: { key: "todo", label: "To Do" }, tasks: [{ id: "t1", title: "A" }] },
+        { status: { key: "doing", label: "Doing" }, tasks: [] },
+      ],
+    };
+    const out = render("board", data, pretty);
+    expect(out).toContain("To Do (1)");
+    expect(out).toContain("• A");
+    expect(out).toContain("t1");
+    expect(out).toContain("Doing (0)");
+    expect(out).toContain("(empty)");
+  });
+});
