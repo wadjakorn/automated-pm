@@ -109,6 +109,7 @@ const HELP = `pm — Project Manager CLI
   pm status list --project <id|name>
   pm status add --project <id|name> --key <key> --label <label> [--final]
   pm status set-final --project <id|name> --key <key> --final <true|false>
+  pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>]
   pm status remove --project <id|name> --key <key>
 
   pm transition add --project <id|name> --from <key> --to <key>
@@ -220,6 +221,17 @@ async function main() {
         await api("PATCH", `/api/projects/${proj(f)}/statuses`, {
           key: need(f, "key"),
           is_final: f.final === "true" || f.final === true,
+        })
+      );
+    case "status update":
+      return emit(
+        "statemachine",
+        await api("PATCH", `/api/projects/${proj(f)}/statuses`, {
+          key: need(f, "key"),
+          label: typeof f.label === "string" ? f.label : undefined,
+          is_final:
+            f.final === undefined ? undefined : f.final === "true" || f.final === true,
+          sort_order: typeof f.order === "string" ? Number(f.order) : undefined,
         })
       );
     case "status remove":
