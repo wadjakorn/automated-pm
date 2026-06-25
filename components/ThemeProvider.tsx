@@ -18,7 +18,7 @@ function apply(resolved: "light" | "dark") {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [choice, setChoiceState] = useState<ThemeChoice>("system");
-  const [resolved, setResolved] = useState<"light" | "dark">("dark");
+  const [resolved, setResolved] = useState<"light" | "dark">("light");
 
   // On mount, read the stored choice and sync to the DOM/media query.
   useEffect(() => {
