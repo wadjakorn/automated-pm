@@ -1,7 +1,26 @@
 # Design: CLI Enhance/Optimize + Web Light Mode
 
 Date: 2026-06-25
-Status: Approved (pending written-spec review)
+Status: Approved — revised 2026-06-26 (see "Revision note")
+
+### Revision note (2026-06-26)
+
+The optional username/password auth feature (commit `5c4a7bb`) landed mid-design.
+It implements users, sessions, scrypt hashing, `api_token` bearer auth, and
+task creator/assignee attribution across **server, CLI, and the skill doc** —
+all three are aligned. This **invalidates the original "auth is fiction / mark
+NOT IMPLEMENTED" premise.** Corrections applied below:
+
+- **Dropped** the "mark auth as NOT IMPLEMENTED" skill change. The skill is now
+  accurate about auth; do not touch the auth sections.
+- **Confirmed** the API routes already support every new CLI command (no server
+  changes): `projects/[id]` has `PATCH` + `DELETE`; `statuses` `PATCH` accepts
+  `label` / `is_final` / `sort_order`.
+- The CLI already exposes `pm user/login/whoami`, `--assignee`/`--unassign`,
+  `PM_TOKEN`. These are **out of scope** (done). Remaining CLI work is output +
+  the still-missing commands listed below.
+- Light-mode component sweep **grows** to include `AuthForm.tsx`,
+  `app/login/page.tsx`, `app/register/page.tsx`.
 
 Two independent features bundled in one effort:
 
@@ -25,9 +44,12 @@ state.
 Two problems motivate this work:
 
 - **Output is JSON-only.** Fine for agents, noisy for humans.
-- **The CLI under-exposes the server.** `lib/repo.ts` implements operations the
-  CLI never surfaces: `updateProject` (rename/description), `softDeleteProject`,
-  and `updateStatus`'s `label` + `sort_order`.
+- **The CLI under-exposes the server.** `lib/repo.ts` + the API routes implement
+  operations the CLI never surfaces: `updateProject` (rename/description) and
+  `softDeleteProject` (both on `PATCH`/`DELETE /api/projects/[id]`), and
+  `updateStatus`'s `label` + `sort_order` (already accepted by
+  `PATCH /api/projects/[id]/statuses`). **All backing routes exist — this is a
+  CLI-only gap, no server changes required.**
 
 ### Architecture
 
@@ -91,9 +113,9 @@ Implementation notes:
 | Command | Backend | Notes |
 |---|---|---|
 | `pm board --project <id\|name>` | GET statuses + tasks | New. Group live tasks by status, ordered by the project's status sort order. Pretty = columns; json = `{ project, columns:[{status,tasks:[]}] }`. |
-| `pm project update --project <id\|name> [--name <new>] [--description <text>]` | `PATCH /api/projects/[id]` | New CLI surface for existing `updateProject`. Requires the route to accept PATCH (verify/add). |
-| `pm project delete --project <id\|name>` | `DELETE /api/projects/[id]` | New CLI surface for existing `softDeleteProject`. Requires the route to accept DELETE (verify/add). |
-| `pm status update --project <id\|name> --key <key> [--label <l>] [--final <bool>] [--order <n>]` | `PATCH /api/projects/[id]/statuses` | Generalizes `status set-final`. Keep `set-final` as a documented alias for back-compat. Route must accept `label`/`sort_order` in addition to `is_final`. |
+| `pm project update --project <id\|name> [--name <new>] [--description <text>]` | `PATCH /api/projects/[id]` (exists) | New CLI surface for existing `updateProject`. Route already implements PATCH. |
+| `pm project delete --project <id\|name>` | `DELETE /api/projects/[id]` (exists) | New CLI surface for existing `softDeleteProject`. Route already implements DELETE. |
+| `pm status update --project <id\|name> --key <key> [--label <l>] [--final <bool>] [--order <n>]` | `PATCH /api/projects/[id]/statuses` (exists) | Generalizes `status set-final`. Keep `set-final` working (back-compat). Route already accepts `label`/`is_final`/`sort_order`. |
 | `pm task create ... [--stdin]` | POST per line | With `--stdin`, read newline-separated titles from stdin, create one task each (same project/status). Output = array of created tasks (json) or one ✓ line each (pretty). |
 
 **Aliases** (resolved before dispatch, documented in help):
@@ -128,22 +150,20 @@ the existing contract that scripts rely on.)
 
 ### Skill doc realignment (`~/.claude/skills/project-manager-cli/SKILL.md`)
 
-The skill currently documents an **auth system that does not exist** (`pm user
-create/list`, `pm login`, `pm whoami`, `PM_TOKEN`, `--assignee`, `--unassign`,
-`401 unauthorized`). Per decision, **do not remove and do not build** — instead:
+The skill's **auth documentation is now accurate** (auth shipped in `5c4a7bb`) —
+**leave the auth sections untouched.** The realignment is purely additive,
+documenting the new output contract and commands this work introduces:
 
-- Add a prominent banner at the top of every auth-related section:
-  **`⚠️ NOT IMPLEMENTED YET — planned, low priority. The commands/flags below do
-  not exist in the current CLI; do not call them.`**
-- Move the auth command block under a clearly separated "Planned (not yet
-  implemented)" heading so an agent never mistakes it for a live command.
-- Update the live sections to document the **new** reality: TTY-aware
-  output + `--json`/`--pretty`/`--no-color`, `--api`, `pm board`, `pm project
-  update/delete`, generalized `pm status update`, aliases (`ls`/`mv`/`rm`),
-  `--stdin` bulk create.
-- Update the output/error contract section: note that **piped/non-TTY stdout is
-  still JSON** (so the existing `jq`/`sed` workflows in the skill remain correct),
-  and that `--json` guarantees JSON regardless of TTY.
+- Update the output/error contract section: **piped/non-TTY stdout is still
+  JSON** (so the existing `jq`/`sed` workflows in the skill remain correct), an
+  interactive terminal gets pretty tables, and `--json` guarantees JSON
+  regardless of TTY. Add `--pretty` / `--no-color` / `--api` / `--version`.
+- Add the new commands to §2 (command reference): `pm board`, `pm project
+  update`, `pm project delete`, generalized `pm status update`, and the
+  `--stdin` bulk form of `pm task create`.
+- Document the aliases `ls` / `mv` / `rm` once (e.g. in §6 Pitfalls or §2).
+- Verify §7 verification block still passes (commands are additive; existing
+  ones are unchanged in JSON mode).
 
 ### Testing (CLI)
 
@@ -168,8 +188,11 @@ Tailwind is configured with `darkMode: "class"` (good base), but:
 - `app/layout.tsx` hardcodes `<html className="dark">`.
 - `app/globals.css` hardcodes `color-scheme: dark` and dark scrollbar colors.
 - Components use semantic tokens for surfaces (`bg-bg`, `bg-bg-soft`,
-  `bg-bg-card`, `border-border`) **but** ~40 hardcoded text/accent classes
+  `bg-bg-card`, `border-border`) **but** ~95 hardcoded text/accent classes
   (`text-gray-*`, `text-white`, `bg-blue-600`, red/green badges) that won't flip.
+
+Sweep covers: `components/{Nav,Board,TaskCard,EditDrawer,Settings,Trash,Toast,AuthForm}.tsx`
+and `app/{page,login/page,register/page,settings/page,trash/page}.tsx`.
 
 ### Architecture: CSS-variable semantic tokens
 
@@ -253,8 +276,7 @@ system theme changes (theme==='system') → media listener re-applies .dark
 
 ## Out of scope
 
-- Building real auth/users/assignee (server, CLI, UI). Documented as
-  "planned, low priority" in the skill only.
+- Auth/users/assignee — already shipped (`5c4a7bb`); not part of this work.
 - Table/TUI libraries or new runtime deps for the CLI (hand-rolled formatting).
 - Additional themes beyond light/dark (token layer makes them easy later).
 - WAL checkpoint / DB maintenance.
@@ -262,9 +284,7 @@ system theme changes (theme==='system') → media listener re-applies .dark
 ## Build order
 
 1. CLI: extract render + mode layers, wire TTY-aware output, add new commands,
-   error hints, aliases, `--stdin`. Tests.
-2. Verify/extend API routes for `project update/delete` (PATCH/DELETE) and
-   `status update` (label/sort_order) if missing.
-3. Skill doc realignment.
-4. Light mode: token layer → ThemeProvider + anti-FOUC → toggle → component sweep.
+   error hints, aliases, `--stdin`. Tests. (No server changes — routes confirmed present.)
+2. Skill doc realignment (additive: output contract + new commands; leave auth as-is).
+3. Light mode: token layer → ThemeProvider + anti-FOUC → toggle → component sweep.
    Preview-verify + screenshots.
