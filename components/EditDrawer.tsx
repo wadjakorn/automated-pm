@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Task, StateMachine, PublicUser } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
+import { shareLink } from "@/lib/ticket-link";
 import { toast } from "./Toast";
 
 // Slide-over drawer to edit a task: title, description, assignee, status move,
@@ -89,9 +90,26 @@ export function EditDrawer({
       >
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-white">Edit task</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-200">
-            ✕
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                const link = shareLink(window.location.origin, task.id);
+                try {
+                  await navigator.clipboard.writeText(link);
+                  toast("Link copied", "success");
+                } catch {
+                  toast(link, "success"); // fallback: surface the link to copy manually
+                }
+              }}
+              className="text-xs text-gray-400 hover:text-gray-200"
+              title="Copy link to this ticket"
+            >
+              🔗 Copy link
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-200">
+              ✕
+            </button>
+          </div>
         </div>
 
         <label className="text-xs text-gray-400">Title</label>
