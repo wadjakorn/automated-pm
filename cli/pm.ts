@@ -102,6 +102,8 @@ const HELP = `pm — Project Manager CLI
 
   pm project create --name <name> [--description <text>]
   pm project list
+  pm project update --project <id|name> [--name <new>] [--description <text>]
+  pm project delete --project <id|name>
 
   # --project accepts a project id OR its (unique) name, e.g. --project 'demo'
   pm status list --project <id|name>
@@ -190,6 +192,16 @@ async function main() {
       );
     case "project list":
       return emit("projects", await api("GET", "/api/projects"));
+    case "project update":
+      return emit(
+        "project",
+        await api("PATCH", `/api/projects/${proj(f)}`, {
+          name: typeof f.name === "string" ? f.name : undefined,
+          description: typeof f.description === "string" ? f.description : undefined,
+        })
+      );
+    case "project delete":
+      return emit("ok", await api("DELETE", `/api/projects/${proj(f)}`));
 
     case "status list":
       return emit("statemachine", await api("GET", `/api/projects/${proj(f)}/statuses`));
