@@ -11,6 +11,9 @@
     "start": "next start",
     "cli": "tsx cli/pm.ts",
     "setup": "bash scripts/setup.sh",
+    "db": "tsx scripts/db.ts",
+    "db:export": "tsx scripts/db.ts export",
+    "db:restore": "tsx scripts/db.ts restore",
     "test": "vitest run",
     "test:watch": "vitest"
   },
