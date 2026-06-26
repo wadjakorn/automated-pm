@@ -104,6 +104,44 @@ Without `npm link`, the same commands work via `npm run cli -- <args>`.
 Illegal moves (no transition, or out of a final state) return HTTP 422 with a reason.
 Concurrent edits are guarded by an optimistic `version`; a stale write returns 409.
 
+## Backup & migrate (DB export / restore)
+
+The whole database lives in one SQLite file (`./data/pm.db`) — **projects, tasks,
+state machines, AND users/sessions**. `scripts/db.ts` exports and restores it
+directly (no web UI, no running server needed). It uses SQLite's online-backup
+API, so it folds the `-wal` in and is safe to run while the dev server is up; a
+plain `cp data/pm.db` can miss data still sitting in the WAL.
+
+```bash
+npm run db -- info                       # DB path + row counts
+npm run db:export                        # -> data/backups/pm-<timestamp>.db
+npm run db:export -- --out ~/pm.db       # custom path
+npm run db:restore -- --in ~/pm.db       # prints a preview, refuses without --yes
+npm run db:restore -- --in ~/pm.db --yes # snapshots current DB first, then swaps in
+```
+
+The export is a single self-contained `.db` file. SQLite's format is
+architecture-independent, so a backup taken on your laptop restores cleanly on
+the dietpi (ARM) server. `restore` validates the source is a real PM database,
+snapshots the current DB to `data/backups/pre-restore-*.db`, then replaces the
+file and clears stale `-wal`/`-shm`. **Restart the server after a restore** so it
+reopens the new file. `data/` is gitignored — copy backups out (e.g. `scp`).
+
+### Localhost → dietpi home server
+
+```bash
+# 1. on your laptop
+npm run db:export -- --out ~/pm-export.db
+scp ~/pm-export.db dietpi@<host>:/path/to/project-manager/data/
+
+# 2. on the dietpi (clone the repo, npm install, then)
+npm run db:restore -- --in data/pm-export.db --yes
+npm run build && npm run start        # serves the board on the dietpi
+```
+
+`PM_DB_PATH` overrides the DB location on either machine if you keep the file
+elsewhere.
+
 ## Layout
 
 - `lib/statemachine.ts` — single source of truth for transition rules (unit tested).
@@ -111,6 +149,7 @@ Concurrent edits are guarded by an optimistic `version`; a stale write returns 4
 - `lib/repo.ts` — SQLite data access (soft-delete aware, version checks).
 - `app/api/**` — REST endpoints used by both the browser and the CLI.
 - `cli/pm.ts` — flag-based CLI → API.
+- `scripts/db.ts` — export/restore the SQLite DB (includes users); for backup + migrating between machines.
 - `components/**`, `app/**` — dark Kanban UI (board, settings, trash).
 
 ## Test
