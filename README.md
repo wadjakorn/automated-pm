@@ -113,35 +113,39 @@ Concurrent edits are guarded by an optimistic `version`; a stale write returns 4
 ## Backup & migrate (DB export / restore)
 
 The whole database lives in one SQLite file (`./data/pm.db`) — **projects, tasks,
-state machines, AND users/sessions**. `scripts/db.ts` exports and restores it
-directly (no web UI, no running server needed). It uses SQLite's online-backup
-API, so it folds the `-wal` in and is safe to run while the dev server is up; a
-plain `cp data/pm.db` can miss data still sitting in the WAL.
+state machines, AND users/sessions** — and description images live beside it in
+`./data/uploads/`. `scripts/db.ts` exports and restores **both** directly (no web
+UI, no running server needed). It uses SQLite's online-backup API for the DB, so
+it folds the `-wal` in and is safe to run while the dev server is up; a plain
+`cp data/pm.db` can miss data still sitting in the WAL.
 
 ```bash
-npm run db -- info                       # DB path + row counts
-npm run db:export                        # -> data/backups/pm-<timestamp>.db
-npm run db:export -- --out ~/pm.db       # custom path
-npm run db:restore -- --in ~/pm.db       # prints a preview, refuses without --yes
-npm run db:restore -- --in ~/pm.db --yes # snapshots current DB first, then swaps in
+npm run db -- info                       # DB path + row counts + image count
+npm run db:export                        # -> data/backups/pm-<timestamp>.tgz (db + uploads)
+npm run db:export -- --out ~/pm.tgz      # custom path
+npm run db:export -- --db-only           # legacy single .db (no images)
+npm run db:restore -- --in ~/pm.tgz      # prints a preview, refuses without --yes
+npm run db:restore -- --in ~/pm.tgz --yes # snapshots current DB + uploads first, then swaps in
 ```
 
-The export is a single self-contained `.db` file. SQLite's format is
-architecture-independent, so a backup taken on your laptop restores cleanly on
-the dietpi (ARM) server. `restore` validates the source is a real PM database,
-snapshots the current DB to `data/backups/pre-restore-*.db`, then replaces the
-file and clears stale `-wal`/`-shm`. **Restart the server after a restore** so it
-reopens the new file. `data/` is gitignored — copy backups out (e.g. `scp`).
+The default export is a single `.tgz` bundling `pm.db` + the `uploads/` image
+dir. SQLite's format is architecture-independent, so a backup taken on your
+laptop restores cleanly on the dietpi (ARM) server. `restore` accepts either a
+`.tgz` archive or a bare `.db` (detected by gzip magic bytes, so old `.db`
+backups still restore), validates the source is a real PM database, snapshots
+the current DB + uploads to `data/backups/pre-restore-*`, then replaces them and
+clears stale `-wal`/`-shm`. **Restart the server after a restore** so it reopens
+the new file. `data/` is gitignored — copy backups out (e.g. `scp`).
 
 ### Localhost → dietpi home server
 
 ```bash
 # 1. on your laptop
-npm run db:export -- --out ~/pm-export.db
-scp ~/pm-export.db dietpi@<host>:/path/to/project-manager/data/
+npm run db:export -- --out ~/pm-export.tgz
+scp ~/pm-export.tgz dietpi@<host>:/path/to/project-manager/data/
 
 # 2. on the dietpi (clone the repo, npm install, then)
-npm run db:restore -- --in data/pm-export.db --yes
+npm run db:restore -- --in data/pm-export.tgz --yes
 npm run build && npm run start        # serves the board on the dietpi
 ```
 
@@ -155,7 +159,9 @@ elsewhere.
 - `lib/repo.ts` — SQLite data access (soft-delete aware, version checks).
 - `app/api/**` — REST endpoints used by both the browser and the CLI.
 - `cli/pm.ts` — flag-based CLI → API.
-- `scripts/db.ts` — export/restore the SQLite DB (includes users); for backup + migrating between machines.
+- `scripts/db.ts` — export/restore the SQLite DB + image uploads (includes users); for backup + migrating between machines.
+- `lib/uploads.ts`, `app/api/uploads/**` — image upload storage (disk) + serving for description images.
+- `lib/markdown.ts` — tiny XSS-safe Markdown renderer for task descriptions.
 - `components/**`, `app/**` — dark Kanban UI (board, settings, trash).
 
 ## Test

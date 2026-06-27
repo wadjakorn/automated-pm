@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Task, StateMachine, PublicUser, LinkedTicket } from "@/lib/types";
 import { PRIORITIES } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
 import { shareLink, LINK_OPTIONS, type LinkOption } from "@/lib/ticket-link";
+import { compressImage, exceedsHardMax } from "@/lib/image-compress";
 import { Markdown } from "./Markdown";
 import { toast } from "./Toast";
 
@@ -34,6 +35,13 @@ export function EditDrawer({
   const [priority, setPriority] = useState(task.priority);
   const [descTab, setDescTab] = useState<"edit" | "preview">("preview");
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  // Synchronous re-entry guard. `uploading` state is async, so two rapid
+  // paste/pick events could both pass a state check before the first re-render;
+  // the ref flips immediately and serializes uploads.
+  const uploadingRef = useRef(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setTitle(task.title);
@@ -41,6 +49,63 @@ export function EditDrawer({
     setAssignee(task.assignee_id ?? "");
     setPriority(task.priority);
   }, [task]);
+
+  // Insert text at the textarea caret (or append), keeping React state in sync.
+  function insertAtCaret(snippet: string) {
+    const ta = taRef.current;
+    if (!ta) {
+      setDescription((d) => d + snippet);
+      return;
+    }
+    const start = ta.selectionStart ?? description.length;
+    const end = ta.selectionEnd ?? description.length;
+    const next = description.slice(0, start) + snippet + description.slice(end);
+    setDescription(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      const pos = start + snippet.length;
+      ta.setSelectionRange(pos, pos);
+    });
+  }
+
+  // Compress (client-side) then upload, then insert the markdown image. Guarded
+  // against re-entry: a second paste/pick is ignored while one is in flight.
+  async function uploadAndInsert(file: File) {
+    if (uploadingRef.current) return; // synchronous guard (state lags a render)
+    uploadingRef.current = true;
+    setDescTab("edit"); // so the inserted markdown is visible and the caret resolves
+    setUploading(true);
+    try {
+      const { file: out } = await compressImage(file);
+      if (exceedsHardMax(out)) {
+        toast(
+          `Image is ${(out.size / 1024 / 1024).toFixed(1)}MB after compression; max is 10MB`,
+          "error"
+        );
+        return;
+      }
+      const { url } = await api.uploadImage(out);
+      const alt = (file.name || "image").replace(/\.[^.]+$/, "");
+      insertAtCaret(`\n![${alt}](${url})\n`);
+      toast("Image uploaded", "success");
+    } catch (e) {
+      toast((e as ApiClientError)?.message ?? "Upload failed", "error");
+    } finally {
+      uploadingRef.current = false;
+      setUploading(false);
+    }
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const img = Array.from(e.clipboardData.items).find((it) =>
+      it.type.startsWith("image/")
+    );
+    if (!img) return;
+    const file = img.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    void uploadAndInsert(file);
+  }
 
   const targets = allowedTargets(sm, task.status_key);
   const statusLabel = (k: string) =>
@@ -132,28 +197,52 @@ export function EditDrawer({
         <div className="flex min-h-0 flex-1 flex-col gap-2">
           <div className="flex items-center justify-between">
             <label className="text-xs text-fg-muted">Description</label>
-            <div className="flex gap-1 text-xs">
-              {(["edit", "preview"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setDescTab(t)}
-                  className={`rounded px-2 py-0.5 capitalize ${
-                    descTab === t
-                      ? "bg-bg-card text-fg"
-                      : "text-fg-muted hover:text-fg"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
+            <div className="flex items-center gap-3 text-xs">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="text-fg-muted hover:text-fg disabled:opacity-50"
+                title="Attach image"
+              >
+                {uploading ? "Uploading…" : "📎 Image"}
+              </button>
+              <div className="flex gap-1">
+                {(["edit", "preview"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setDescTab(t)}
+                    className={`rounded px-2 py-0.5 capitalize ${
+                      descTab === t
+                        ? "bg-bg-card text-fg"
+                        : "text-fg-muted hover:text-fg"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadAndInsert(f);
+              e.target.value = "";
+            }}
+          />
           {descTab === "edit" ? (
             <textarea
+              ref={taRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Markdown supported…"
+              onPaste={onPaste}
+              placeholder="Markdown supported. Paste or attach an image…"
               className="min-h-[280px] flex-1 resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
             />
           ) : (

@@ -4,6 +4,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task } from "@/lib/types";
 import type { Priority } from "@/lib/priority";
+import { markdownToPlainText } from "@/lib/markdown";
 
 // Color per priority. now/high stand out; medium is the quiet default; low dims.
 const PRIORITY_STYLE: Record<Priority, string> = {
@@ -56,7 +57,7 @@ export function TaskCard({
       </div>
       {task.description && (
         <div className="mt-1 line-clamp-2 text-xs text-fg-muted">
-          {task.description}
+          {markdownToPlainText(task.description)}
         </div>
       )}
       {task.assignee_username && (
