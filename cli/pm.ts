@@ -196,7 +196,9 @@ async function main() {
   // `task link <add|list|rm>` has a sub-action positional, so it can't use the
   // flat `${group} ${action}` switch — handle it before flags are parsed.
   if (group === "task" && rawAction === "link") {
-    const sub = ALIAS[rest[0]] ?? rest[0];
+    // Match the user-facing sub-action verbatim (not via ALIAS) so the cases
+    // read the same as what the user types.
+    const sub = rest[0];
     const lf = parseFlags(rest.slice(1));
     switch (sub) {
       case "add":
@@ -208,8 +210,10 @@ async function main() {
           })
         );
       case "list":
+      case "ls":
         return emit("raw", await api("GET", `/api/tasks/${need(lf, "id")}/links`));
-      case "delete": // ALIAS maps `rm` → `delete`
+      case "rm":
+      case "remove":
         return emit(
           "ok",
           await api(

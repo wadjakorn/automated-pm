@@ -32,6 +32,10 @@ export function linkLabel(verb: LinkVerb, isSource: boolean): string {
       return isSource ? "Causes" : "Caused by";
     case "relates":
       return "Relates to";
+    default:
+      // verb comes from an untyped DB row; fail loud on an unknown value
+      // rather than returning undefined.
+      throw new Error(`unknown link verb "${verb}"`);
   }
 }
 
