@@ -16,4 +16,9 @@ describe("markdownToPlainText", () => {
     expect(markdownToPlainText("")).toBe("");
     expect(markdownToPlainText("a\n\n\nb")).toBe("a b");
   });
+  it("flattens GFM tables (no pipes or separator rows)", () => {
+    expect(markdownToPlainText("| a | b |\n|---|---|\n| 1 | 2 |")).toBe(
+      "a b 1 2"
+    );
+  });
 });

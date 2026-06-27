@@ -13,6 +13,8 @@ export function markdownToPlainText(src: string): string {
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/^\s*\|?[-:\s|]+\|?\s*$/gm, "") // GFM table separator rows
+    .replace(/\|/g, " ") // table cell pipes
     .replace(/\s+/g, " ")
     .trim();
 }
