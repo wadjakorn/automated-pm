@@ -29,9 +29,9 @@ export function EditDrawer({
   const [description, setDescription] = useState(task.description ?? "");
   const [assignee, setAssignee] = useState(task.assignee_id ?? "");
   const [priority, setPriority] = useState(task.priority);
+  const [descTab, setDescTab] = useState<"edit" | "preview">("preview");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -40,7 +40,6 @@ export function EditDrawer({
     setDescription(task.description ?? "");
     setAssignee(task.assignee_id ?? "");
     setPriority(task.priority);
-    setPreview(false);
   }, [task]);
 
   // Insert text at the textarea caret (or append), keeping React state in sync.
@@ -61,8 +60,11 @@ export function EditDrawer({
     });
   }
 
-  // Compress (client-side) then upload, then insert the markdown image.
+  // Compress (client-side) then upload, then insert the markdown image. Guarded
+  // against re-entry: a second paste/pick is ignored while one is in flight.
   async function uploadAndInsert(file: File) {
+    if (uploading) return;
+    setDescTab("edit"); // so the inserted markdown is visible and the caret resolves
     setUploading(true);
     try {
       const { file: out } = await compressImage(file);
@@ -148,7 +150,7 @@ export function EditDrawer({
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={onClose}>
       <div
-        className="flex h-full w-full max-w-md flex-col gap-4 border-l border-border bg-bg-soft p-5"
+        className="flex h-full w-[60%] min-w-[560px] max-w-full flex-col gap-4 overflow-y-auto border-l border-border bg-bg-soft p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -182,55 +184,67 @@ export function EditDrawer({
           className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
         />
 
-        <div className="flex items-center justify-between">
-          <label className="text-xs text-fg-muted">Description</label>
-          <div className="flex items-center gap-3 text-xs">
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="text-fg-muted hover:text-fg disabled:opacity-50"
-              title="Attach image"
-            >
-              {uploading ? "Uploading…" : "📎 Image"}
-            </button>
-            <button
-              onClick={() => setPreview((p) => !p)}
-              className="text-fg-muted hover:text-fg"
-            >
-              {preview ? "Edit" : "Preview"}
-            </button>
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-fg-muted">Description</label>
+            <div className="flex items-center gap-3 text-xs">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="text-fg-muted hover:text-fg disabled:opacity-50"
+                title="Attach image"
+              >
+                {uploading ? "Uploading…" : "📎 Image"}
+              </button>
+              <div className="flex gap-1">
+                {(["edit", "preview"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setDescTab(t)}
+                    className={`rounded px-2 py-0.5 capitalize ${
+                      descTab === t
+                        ? "bg-bg-card text-fg"
+                        : "text-fg-muted hover:text-fg"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void uploadAndInsert(f);
-            e.target.value = "";
-          }}
-        />
-        {preview ? (
-          <div className="min-h-[8rem] overflow-auto rounded border border-border bg-bg-card px-3 py-2 text-sm">
-            {description ? (
-              <Markdown source={description} />
-            ) : (
-              <span className="text-fg-subtle">Nothing to preview.</span>
-            )}
-          </div>
-        ) : (
-          <textarea
-            ref={taRef}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            onPaste={onPaste}
-            rows={6}
-            placeholder="Markdown supported. Paste or attach an image…"
-            className="resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void uploadAndInsert(f);
+              e.target.value = "";
+            }}
           />
-        )}
+          {descTab === "edit" ? (
+            <textarea
+              ref={taRef}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onPaste={onPaste}
+              placeholder="Markdown supported. Paste or attach an image…"
+              className="min-h-[280px] flex-1 resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+            />
+          ) : (
+            <div className="min-h-[280px] flex-1 overflow-auto rounded border border-border bg-bg-card px-4 py-3">
+              {description.trim() ? (
+                <Markdown>{description}</Markdown>
+              ) : (
+                <span className="text-sm text-fg-subtle">No description.</span>
+              )}
+            </div>
+          )}
+        </div>
 
         <label className="text-xs text-fg-muted">Assignee</label>
         <select

@@ -22,7 +22,9 @@
     "nanoid": "^5.0.9",
     "next": "^15.5.19",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@dnd-kit/core": "^6.3.1",

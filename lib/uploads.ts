@@ -3,15 +3,17 @@
 // restarts. The `uploads` table (lib/db.ts) holds the metadata and is the
 // source of truth for backups (scripts/db.ts bundles this dir).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { nanoid } from "nanoid";
 import { getDb } from "./db";
 
-// Resolve the uploads dir relative to the same data root as the DB. When
-// PM_DB_PATH is set (Docker), keep uploads beside it under <dataRoot>/uploads.
+// Resolve the uploads dir to sit beside the DB file (mirrors lib/db.ts, which
+// treats PM_DB_PATH as a *file* path, e.g. /app/data/pm.db). dirname() gives
+// the data dir; uploads live under it -> /app/data/uploads. Falls back to
+// <cwd>/data/uploads when PM_DB_PATH is unset.
 function dataRoot(): string {
   const dbPath = process.env.PM_DB_PATH;
-  if (dbPath) return join(dbPath, "..", "uploads");
+  if (dbPath) return join(dirname(dbPath), "uploads");
   return join(process.cwd(), "data", "uploads");
 }
 

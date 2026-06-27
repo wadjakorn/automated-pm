@@ -148,12 +148,27 @@ function mkTmpDir(prefix: string): string {
   return dir;
 }
 
+// This is a synchronous one-shot CLI (not a server), so execFileSync is fine —
+// it blocks this process only, with no event loop to starve. We still wrap tar
+// so a missing binary or a failed archive surfaces a clear error instead of a
+// raw stack trace.
+function runTar(args: string[], what: string) {
+  try {
+    execFileSync("tar", args, { stdio: ["ignore", "ignore", "pipe"] });
+  } catch (e: any) {
+    const stderr = e?.stderr ? `: ${String(e.stderr).trim()}` : "";
+    if (e?.code === "ENOENT")
+      die(`'tar' not found on PATH — required to ${what}`);
+    die(`tar failed while trying to ${what}${stderr}`);
+  }
+}
+
 function tarCreate(archive: string, cwd: string, entries: string[]) {
-  execFileSync("tar", ["-czf", archive, "-C", cwd, ...entries]);
+  runTar(["-czf", archive, "-C", cwd, ...entries], "create the archive");
 }
 
 function tarExtract(archive: string, destDir: string) {
-  execFileSync("tar", ["-xzf", archive, "-C", destDir]);
+  runTar(["-xzf", archive, "-C", destDir], "extract the archive");
 }
 
 async function cmdExport(f: Record<string, string | boolean>) {
