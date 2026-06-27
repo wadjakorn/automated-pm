@@ -1,4 +1,5 @@
 // Shared domain types. Used by API routes, repo, CLI, and UI.
+import type { Priority } from "./priority";
 
 export interface Project {
   id: string;
@@ -31,6 +32,7 @@ export interface Task {
   title: string;
   description: string | null;
   status_key: string;
+  priority: Priority;
   rank: number;
   version: number;
   created_at: string;

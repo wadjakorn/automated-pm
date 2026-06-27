@@ -108,11 +108,11 @@ pm status remove --project <id|name> --key <key>
 pm transition add    --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
-pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
+pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task create  --project <id|name> --stdin              # one task per non-empty stdin line
-pm task list    --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
+pm task list    --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task move    --id <id> --status <key> [--version <n>]
-pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
+pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
 pm task delete  --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
 
@@ -129,6 +129,12 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
 
 ## 3. Rules you MUST respect
 
+- **Reflect your work in the ticket's status.** When you start implementing a
+  ticket, move it to `doing` FIRST (`pm task move --id <id> --status doing`),
+  before writing any code. When the work is finished, move it to `completed`.
+  Step through each legal edge (e.g. `todo → doing`, `doing → completed`); there
+  is no multi-hop move. This keeps the board honest about what is in progress vs
+  done — do it even when the user only says "implement this ticket".
 - **State machine is per project.** Default chain:
   `backlog → todo → doing → completed → tested → released`. `released` is
   **final** — no moves out of it. Moves only succeed along defined edges.
@@ -154,6 +160,11 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
   <id|username>` must name an existing user (else `not_found`); `--unassign`
   clears it. There are no roles — auth never grants or denies access, it only
   records who created/owns a task. User deletion is not implemented yet.
+- **Priority is a fixed scale.** `low | medium | high | now`, default `medium`
+  (not per-project, unlike statuses). An unknown value returns `bad_request`.
+  `pm task list` auto-sorts each status column by priority (`now → high →
+  medium → low`), then by rank — so the most urgent ticket per column is always
+  on top. Filter with `--priority <p>`; set with `--priority` on create/update.
 
 ## 4. Typical workflow
 

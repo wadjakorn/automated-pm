@@ -72,10 +72,10 @@ pm status remove --project <id|name> --key <key>
 pm transition add --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
-pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
-pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
+pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
+pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task move --id <id> --status <key> [--version <n>]
-pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
+pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
 pm task delete --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
 pm task create --project <id|name> --stdin          # one task per non-empty stdin line

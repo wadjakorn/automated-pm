@@ -116,13 +116,14 @@ const HELP = `pm — Project Manager CLI
   pm transition add --project <id|name> --from <key> --to <key>
   pm transition remove --project <id|name> --from <key> --to <key>
 
-  # --assignee accepts a user id OR username
-  pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>]
+  # --assignee accepts a user id OR username; --priority is low|medium|high|now (default medium)
+  pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <p>]
   pm task create --project <id|name> --stdin   # one task per non-empty stdin line
   # aliases: \`ls\`=list, \`mv\`=move, \`rm\`=delete (e.g. pm task ls --project demo)
-  pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>]
+  # task list auto-sorts each status by priority (now→high→medium→low), then rank
+  pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>] [--priority <p>]
   pm task move --id <id> --status <key> [--version <n>]
-  pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign]
+  pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <p>]
   pm task delete --id <id>
   pm task restore --id <id>
 
@@ -292,6 +293,7 @@ async function main() {
             title,
             status: typeof f.status === "string" ? f.status : undefined,
             assignee: typeof f.assignee === "string" ? f.assignee : undefined,
+            priority: typeof f.priority === "string" ? f.priority : undefined,
           });
           if (!(r.status >= 200 && r.status < 300)) return emit("task", r); // surface first error
           created.push(r.json);
@@ -306,6 +308,7 @@ async function main() {
           description: f.description,
           status: f.status,
           assignee: typeof f.assignee === "string" ? f.assignee : undefined,
+          priority: typeof f.priority === "string" ? f.priority : undefined,
         })
       );
     }
@@ -314,6 +317,7 @@ async function main() {
       if (typeof f.status === "string") qs.set("status", f.status);
       if (f["include-deleted"]) qs.set("includeDeleted", "true");
       if (typeof f.assignee === "string") qs.set("assignee", f.assignee);
+      if (typeof f.priority === "string") qs.set("priority", f.priority);
       return emit("tasks", await api("GET", `/api/tasks?${qs.toString()}`));
     }
     case "task move":
@@ -336,6 +340,7 @@ async function main() {
           description: f.description,
           version: f.version !== undefined ? Number(f.version) : undefined,
           assignee,
+          priority: typeof f.priority === "string" ? f.priority : undefined,
         })
       );
     }

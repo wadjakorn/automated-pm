@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Task, StateMachine, PublicUser } from "@/lib/types";
+import { PRIORITIES } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
 import { shareLink } from "@/lib/ticket-link";
@@ -25,12 +26,14 @@ export function EditDrawer({
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
   const [assignee, setAssignee] = useState(task.assignee_id ?? "");
+  const [priority, setPriority] = useState(task.priority);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setTitle(task.title);
     setDescription(task.description ?? "");
     setAssignee(task.assignee_id ?? "");
+    setPriority(task.priority);
   }, [task]);
 
   const targets = allowedTargets(sm, task.status_key);
@@ -58,6 +61,7 @@ export function EditDrawer({
           title: title.trim(),
           description: description || null,
           assignee: assignee || null,
+          priority,
         },
         task.version
       );
@@ -137,6 +141,19 @@ export function EditDrawer({
           {users.map((u) => (
             <option key={u.id} value={u.id}>
               {u.username}
+            </option>
+          ))}
+        </select>
+
+        <label className="text-xs text-fg-muted">Priority</label>
+        <select
+          value={priority}
+          onChange={(e) => setPriority(e.target.value as typeof priority)}
+          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none"
+        >
+          {PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {p}
             </option>
           ))}
         </select>

@@ -12,6 +12,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import type { Task, StateMachine } from "@/lib/types";
+import { priorityOrder } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { useProjects, usePoll, useUsers, useTaskRoute } from "./useApp";
 import { resolveTicketAction } from "@/lib/ticket-link";
@@ -207,10 +208,14 @@ export function Board() {
     }
   }
 
+  // Within a column: priority first (now→low), then rank — mirrors the server.
   const byStatus = (key: string) =>
     tasks
       .filter((t) => t.status_key === key)
-      .sort((a, b) => a.rank - b.rank);
+      .sort(
+        (a, b) =>
+          priorityOrder(a.priority) - priorityOrder(b.priority) || a.rank - b.rank
+      );
 
   return (
     <div className="flex h-screen flex-col">

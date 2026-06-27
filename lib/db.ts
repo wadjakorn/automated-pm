@@ -95,6 +95,11 @@ function migrate(db: Database.Database) {
   if (!taskCols.has("assignee_id")) {
     db.exec("ALTER TABLE tasks ADD COLUMN assignee_id TEXT REFERENCES users(id)");
   }
+  // Priority: fixed scale, defaults to 'medium' so existing rows migrate in
+  // place (NOT NULL is safe because the column literal supplies the default).
+  if (!taskCols.has("priority")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'");
+  }
 
   // Project names are unique among live (non-deleted) projects, so `--project`
   // can take a name instead of an id. Partial index ignores soft-deleted rows,

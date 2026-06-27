@@ -90,7 +90,8 @@ export const api = {
     title: string,
     description?: string,
     status?: string,
-    assignee?: string | null
+    assignee?: string | null,
+    priority?: string
   ) =>
     req<Task>("POST", "/api/tasks", {
       project: projectId,
@@ -98,12 +99,18 @@ export const api = {
       description,
       status,
       assignee,
+      priority,
     }),
   moveTask: (id: string, status: string, version: number) =>
     req<Task>("PATCH", `/api/tasks/${id}`, { status, version }),
   updateTask: (
     id: string,
-    patch: { title?: string; description?: string | null; assignee?: string | null },
+    patch: {
+      title?: string;
+      description?: string | null;
+      assignee?: string | null;
+      priority?: string;
+    },
     version: number
   ) => req<Task>("PATCH", `/api/tasks/${id}`, { ...patch, version }),
   deleteTask: (id: string) => req<{ ok: true }>("DELETE", `/api/tasks/${id}`),
