@@ -36,6 +36,10 @@ export function EditDrawer({
   const [descTab, setDescTab] = useState<"edit" | "preview">("preview");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // Synchronous re-entry guard. `uploading` state is async, so two rapid
+  // paste/pick events could both pass a state check before the first re-render;
+  // the ref flips immediately and serializes uploads.
+  const uploadingRef = useRef(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -67,7 +71,8 @@ export function EditDrawer({
   // Compress (client-side) then upload, then insert the markdown image. Guarded
   // against re-entry: a second paste/pick is ignored while one is in flight.
   async function uploadAndInsert(file: File) {
-    if (uploading) return;
+    if (uploadingRef.current) return; // synchronous guard (state lags a render)
+    uploadingRef.current = true;
     setDescTab("edit"); // so the inserted markdown is visible and the caret resolves
     setUploading(true);
     try {
@@ -86,6 +91,7 @@ export function EditDrawer({
     } catch (e) {
       toast((e as ApiClientError)?.message ?? "Upload failed", "error");
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
     }
   }

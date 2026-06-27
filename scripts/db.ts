@@ -32,6 +32,7 @@ import {
   readSync,
   readdirSync,
   closeSync,
+  renameSync,
   rmSync,
   statSync,
 } from "node:fs";
@@ -167,7 +168,41 @@ function tarCreate(archive: string, cwd: string, entries: string[]) {
   runTar(["-czf", archive, "-C", cwd, ...entries], "create the archive");
 }
 
+// Reject a malicious archive before extracting. Backups are produced by
+// cmdExport, but restore also accepts an arbitrary --in file, so validate
+// defensively against path traversal, absolute paths, symlinks/special files,
+// and unexpected members. (Defense in depth — extraction also targets an
+// isolated temp dir.)
+function assertSafeArchive(archive: string) {
+  let listing: string;
+  try {
+    // -tv gives a leading type char per entry (- file, d dir, l symlink, …).
+    listing = execFileSync("tar", ["-tzvf", archive], { encoding: "utf8" });
+  } catch (e: any) {
+    die(`cannot read archive ${archive}: ${String(e?.stderr ?? e?.message ?? e).trim()}`);
+  }
+  for (const line of listing.split("\n")) {
+    if (!line.trim()) continue;
+    const type = line[0];
+    if (type !== "-" && type !== "d")
+      die(`archive ${archive} contains a non-regular entry (type '${type}') — refusing to extract`);
+  }
+  // Member names (exact, one per line) for the path checks.
+  const names = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" })
+    .split("\n")
+    .filter((n) => n.trim());
+  for (const name of names) {
+    const n = name.replace(/\/+$/, "");
+    if (n.startsWith("/") || n.split("/").includes(".."))
+      die(`archive ${archive} has an unsafe path '${name}' — refusing to extract`);
+    const top = n.split("/")[0];
+    if (top !== "pm.db" && top !== "uploads")
+      die(`archive ${archive} has an unexpected entry '${name}' (only pm.db and uploads/ allowed)`);
+  }
+}
+
 function tarExtract(archive: string, destDir: string) {
+  assertSafeArchive(archive);
   runTar(["-xzf", archive, "-C", destDir], "extract the archive");
 }
 
@@ -295,15 +330,23 @@ async function cmdRestore(f: Record<string, string | boolean>) {
       if (existsSync(p)) rmSync(p);
     }
 
-    // Replace uploads dir from the archive (snapshot the old one first).
+    // Replace uploads dir from the archive. Stage the new dir as a sibling,
+    // snapshot + remove the old one, then rename() the staged dir into place —
+    // rename is atomic on a single filesystem, so the swap window is just the
+    // rename, not the whole copy. (A live server should still be restarted, per
+    // the note below — this only narrows the inconsistency window, it can't
+    // coordinate with a running process.)
     let nImages = 0;
     if (uploadsFrom) {
+      const staged = `${UPLOADS_DIR}.incoming-${stamp()}`;
+      rmSync(staged, { recursive: true, force: true });
+      cpSync(uploadsFrom, staged, { recursive: true });
       if (existsSync(UPLOADS_DIR)) {
         const snap = join(dirname(DB_PATH), "backups", `pre-restore-${stamp()}-uploads`);
         cpSync(UPLOADS_DIR, snap, { recursive: true });
         rmSync(UPLOADS_DIR, { recursive: true, force: true });
       }
-      cpSync(uploadsFrom, UPLOADS_DIR, { recursive: true });
+      renameSync(staged, UPLOADS_DIR);
       nImages = db_listFiles(UPLOADS_DIR).length;
     }
 
