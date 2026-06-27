@@ -51,6 +51,20 @@ export function EditDrawer({
     setPriority(task.priority);
   }, [task]);
 
+  // Unsaved edits: any editable field differs from the task's saved value.
+  // Used to guard accidental closes (backdrop misclick / ✕) so work isn't lost.
+  const dirty =
+    title !== task.title ||
+    description !== (task.description ?? "") ||
+    assignee !== (task.assignee_id ?? "") ||
+    priority !== task.priority;
+
+  // Confirm before discarding unsaved edits. A clean drawer closes instantly.
+  const requestClose = useCallback(() => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  }, [dirty, onClose]);
+
   // Insert text at the textarea caret (or append), keeping React state in sync.
   function insertAtCaret(snippet: string) {
     const ta = taRef.current;
@@ -159,7 +173,7 @@ export function EditDrawer({
     });
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={requestClose}>
       <div
         className="flex h-full w-[60%] min-w-[560px] max-w-full flex-col gap-4 overflow-y-auto border-l border-border bg-bg-soft p-5"
         onClick={(e) => e.stopPropagation()}
@@ -181,7 +195,7 @@ export function EditDrawer({
             >
               🔗 Copy link
             </button>
-            <button onClick={onClose} className="text-fg-muted hover:text-fg">
+            <button onClick={requestClose} className="text-fg-muted hover:text-fg">
               ✕
             </button>
           </div>
