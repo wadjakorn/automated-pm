@@ -14,6 +14,7 @@ export function GET(req: NextRequest) {
     return listTasks(project, {
       status: sp.get("status") ?? undefined,
       includeDeleted: sp.get("includeDeleted") === "true",
+      includeArchived: sp.get("includeArchived") === "true",
       assignee: sp.get("assignee") ?? undefined,
       priority: sp.get("priority") ?? undefined,
     });

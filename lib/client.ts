@@ -84,6 +84,8 @@ export const api = {
       "GET",
       `/api/tasks?project=${projectId}${includeDeleted ? "&includeDeleted=true" : ""}`
     ),
+  listArchivedTasks: (projectId: string) =>
+    req<Task[]>("GET", `/api/tasks?project=${projectId}&includeArchived=true`),
   getTask: (id: string) => req<Task>("GET", `/api/tasks/${id}`),
   createTask: (
     projectId: string,
@@ -115,6 +117,13 @@ export const api = {
   ) => req<Task>("PATCH", `/api/tasks/${id}`, { ...patch, version }),
   deleteTask: (id: string) => req<{ ok: true }>("DELETE", `/api/tasks/${id}`),
   restoreTask: (id: string) => req<Task>("POST", `/api/tasks/${id}/restore`),
+  archiveTask: (id: string) => req<Task>("POST", `/api/tasks/${id}/archive`, {}),
+  unarchiveTask: (id: string) => req<Task>("POST", `/api/tasks/${id}/unarchive`),
+  bulkArchive: (projectId: string, status: string) =>
+    req<{ archived: Task[] }>("POST", "/api/tasks/archive", {
+      project: projectId,
+      status,
+    }),
 
   // image upload (multipart, separate from the JSON `req` helper above).
   uploadImage: async (file: File) => {

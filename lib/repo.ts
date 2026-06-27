@@ -319,6 +319,7 @@ export function listTasks(
   opts: {
     status?: string;
     includeDeleted?: boolean;
+    includeArchived?: boolean;
     assignee?: string;
     priority?: string;
   } = {}
@@ -327,6 +328,8 @@ export function listTasks(
   const clauses = ["t.project_id = ?"];
   const params: unknown[] = [projectId];
   if (!opts.includeDeleted) clauses.push("t.deleted_at IS NULL");
+  // Archived tickets are live but off the board — excluded unless asked for.
+  if (!opts.includeArchived) clauses.push("t.archived_at IS NULL");
   if (opts.status) {
     clauses.push("t.status_key = ?");
     params.push(opts.status);
@@ -475,6 +478,65 @@ export function restoreTask(taskId: string): Task {
     .prepare("UPDATE tasks SET deleted_at=NULL, version=version+1, updated_at=? WHERE id=?")
     .run(now(), taskId);
   return getTask(taskId);
+}
+
+// ---------------- Archive ----------------
+// Archiving files a finished ticket off the board while keeping it live. Only
+// tickets in a *final* status may be archived (the feature is for done work);
+// archiving is independent of soft delete. getTask includes archived rows, so
+// direct links keep working.
+
+function isFinalStatus(projectId: string, statusKey: string): boolean {
+  return getStateMachine(projectId).statuses.some(
+    (s) => s.key === statusKey && s.is_final
+  );
+}
+
+export function archiveTask(taskId: string, opts: { version?: number } = {}): Task {
+  const t = getTask(taskId);
+  assertVersion(t, opts.version);
+  if (t.archived_at) return t; // idempotent
+  if (!isFinalStatus(t.project_id, t.status_key))
+    throw badRequest("only tickets in a final status can be archived");
+  getDb()
+    .prepare("UPDATE tasks SET archived_at=?, version=version+1, updated_at=? WHERE id=?")
+    .run(now(), now(), taskId);
+  return getTask(taskId);
+}
+
+export function unarchiveTask(taskId: string): Task {
+  const t = getTask(taskId);
+  if (!t.archived_at) return t;
+  getDb()
+    .prepare("UPDATE tasks SET archived_at=NULL, version=version+1, updated_at=? WHERE id=?")
+    .run(now(), taskId);
+  return getTask(taskId);
+}
+
+// Bulk-archive every live, un-archived ticket in a final-status column.
+// Returns the archived tickets. Throws if the status isn't final.
+export function bulkArchiveColumn(
+  projectId: string,
+  statusKey: string
+): { archived: Task[] } {
+  projectId = getProject(projectId).id;
+  if (!isFinalStatus(projectId, statusKey))
+    throw badRequest(`status "${statusKey}" is not a final status`);
+  const db = getDb();
+  const ts = now();
+  const rows = db
+    .prepare(
+      "SELECT id FROM tasks WHERE project_id=? AND status_key=? AND deleted_at IS NULL AND archived_at IS NULL"
+    )
+    .all(projectId, statusKey) as { id: string }[];
+  const tx = db.transaction(() => {
+    const upd = db.prepare(
+      "UPDATE tasks SET archived_at=?, version=version+1, updated_at=? WHERE id=?"
+    );
+    for (const r of rows) upd.run(ts, ts, r.id);
+  });
+  tx();
+  return { archived: rows.map((r) => getTask(r.id)) };
 }
 
 // ---------------- Task links ----------------

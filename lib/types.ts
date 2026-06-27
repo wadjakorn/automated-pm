@@ -38,6 +38,9 @@ export interface Task {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  // Archived = filed away off the board, but still live (direct link + search
+  // find it). Independent of deleted_at (Trash). Null = not archived.
+  archived_at: string | null;
   // Attribution (nullable, backward compat). *_username are joined for display
   // and are not stored columns.
   creator_id: string | null;

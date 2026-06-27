@@ -73,11 +73,14 @@ pm transition add --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
 pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
-pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>] [--priority <low|medium|high|now>]
+pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task move --id <id> --status <key> [--version <n>]
 pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
 pm task delete --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
+pm task archive --id <id>         # final-status only; off the board but stays live
+pm task unarchive --id <id>
+pm task archive-final --project <id|name> --status <final-key>   # bulk-archive a final column
 pm task create --project <id|name> --stdin          # one task per non-empty stdin line
 
 # Ticket links: --to is a ticket URL or bare id; --type = blocks|blocked-by|causes|caused-by|relates
@@ -116,6 +119,13 @@ user. Creator is set from `PM_TOKEN` (the authenticated caller), not a flag.
   from normal lists but is recoverable via `pm task restore`. Find deleted tasks
   with `pm task list --project <id> --include-deleted` (filter where
   `deleted_at != null`).
+- **Archive ≠ delete.** `pm task archive` sets `archived_at`, allowed **only for
+  tickets in a final status**. Archived tickets leave every board but stay live:
+  hidden from `pm task list` unless `--include-archived`, still openable by
+  direct link, and included in future search. `archived_at` is independent of
+  `deleted_at` (archived tickets are not in Trash). Reverse with
+  `pm task unarchive`; `pm task archive-final --project <p> --status <final-key>`
+  archives a whole final column at once.
 
 ## Typical workflow
 

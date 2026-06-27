@@ -121,11 +121,17 @@ const HELP = `pm — Project Manager CLI
   pm task create --project <id|name> --stdin   # one task per non-empty stdin line
   # aliases: \`ls\`=list, \`mv\`=move, \`rm\`=delete (e.g. pm task ls --project demo)
   # task list auto-sorts each status by priority (now→high→medium→low), then rank
-  pm task list --project <id|name> [--status <key>] [--include-deleted] [--assignee <id|username>] [--priority <p>]
+  pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <p>]
   pm task move --id <id> --status <key> [--version <n>]
   pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <p>]
   pm task delete --id <id>
   pm task restore --id <id>
+
+  # archive — file finished tickets off the board (stay live: direct link + search).
+  # only tickets in a FINAL status can be archived. archive-final does it in bulk.
+  pm task archive --id <id>
+  pm task unarchive --id <id>
+  pm task archive-final --project <id|name> --status <final-key>
 
   # ticket links — --to accepts a ticket URL or bare id; --type is one of
   # blocks | blocked-by | causes | caused-by | relates
@@ -355,6 +361,7 @@ async function main() {
       const qs = new URLSearchParams({ project: need(f, "project") });
       if (typeof f.status === "string") qs.set("status", f.status);
       if (f["include-deleted"]) qs.set("includeDeleted", "true");
+      if (f["include-archived"]) qs.set("includeArchived", "true");
       if (typeof f.assignee === "string") qs.set("assignee", f.assignee);
       if (typeof f.priority === "string") qs.set("priority", f.priority);
       return emit("tasks", await api("GET", `/api/tasks?${qs.toString()}`));
@@ -387,6 +394,21 @@ async function main() {
       return emit("ok", await api("DELETE", `/api/tasks/${need(f, "id")}`));
     case "task restore":
       return emit("task", await api("POST", `/api/tasks/${need(f, "id")}/restore`));
+    case "task archive":
+      return emit("task", await api("POST", `/api/tasks/${need(f, "id")}/archive`, {}));
+    case "task unarchive":
+      return emit("task", await api("POST", `/api/tasks/${need(f, "id")}/unarchive`));
+    case "task archive-final":
+      return emit(
+        "tasks",
+        await api("POST", "/api/tasks/archive", {
+          project: need(f, "project"),
+          status: need(f, "status"),
+        }).then((r) => ({
+          status: r.status,
+          json: r.json?.archived ?? r.json,
+        }))
+      );
 
     default:
       fail(`unknown command "${group} ${action}"`, { help: HELP });

@@ -128,6 +128,13 @@ function migrate(db: Database.Database) {
   if (!taskCols.has("priority")) {
     db.exec("ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium'");
   }
+  // Archive: a ticket "filed away" once it reaches a final status. Distinct
+  // from deleted_at (Trash) — archived rows stay live (direct link + future
+  // search still find them) but are hidden from every board. Nullable, no
+  // default → old rows stay un-archived (backward compat).
+  if (!taskCols.has("archived_at")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN archived_at TEXT");
+  }
 
   // Project names are unique among live (non-deleted) projects, so `--project`
   // can take a name instead of an id. Partial index ignores soft-deleted rows,
