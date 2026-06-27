@@ -77,7 +77,21 @@ function migrate(db: Database.Database) {
       expires_at TEXT NOT NULL
     );
 
+    -- Directed link between two tasks. One row per link; the inverse direction
+    -- is derived at read time. ON DELETE CASCADE cleans up on hard delete (the
+    -- UI only soft-deletes, so links survive a trashed task and show "deleted").
+    CREATE TABLE IF NOT EXISTS task_links (
+      id         TEXT PRIMARY KEY,
+      source_id  TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      target_id  TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      type       TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(source_id, target_id, type)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_task_links_source ON task_links(source_id);
+    CREATE INDEX IF NOT EXISTS idx_task_links_target ON task_links(target_id);
     CREATE INDEX IF NOT EXISTS idx_statuses_project ON statuses(project_id);
     CREATE INDEX IF NOT EXISTS idx_transitions_project ON transitions(project_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

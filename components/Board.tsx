@@ -266,6 +266,7 @@ export function Board() {
           users={users}
           onClose={closeTask}
           onChanged={() => selectedId && loadTasks(selectedId)}
+          onOpenTask={openTask}
         />
       )}
     </div>
