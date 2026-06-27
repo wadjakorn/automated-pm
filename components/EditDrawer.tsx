@@ -6,6 +6,7 @@ import { PRIORITIES } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
 import { shareLink, LINK_OPTIONS, type LinkOption } from "@/lib/ticket-link";
+import { copyText } from "@/lib/clipboard";
 import { compressImage, exceedsHardMax } from "@/lib/image-compress";
 import { Markdown } from "./Markdown";
 import { toast } from "./Toast";
@@ -169,11 +170,10 @@ export function EditDrawer({
             <button
               onClick={async () => {
                 const link = shareLink(window.location.origin, task.id);
-                try {
-                  await navigator.clipboard.writeText(link);
+                if (await copyText(link)) {
                   toast("Link copied", "success");
-                } catch {
-                  toast(link, "success"); // fallback: surface the link to copy manually
+                } else {
+                  toast(link, "success"); // last resort: surface the link to copy manually
                 }
               }}
               className="text-xs text-fg-muted hover:text-fg"
