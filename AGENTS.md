@@ -111,6 +111,8 @@ user. Creator is set from `PM_TOKEN` (the authenticated caller), not a flag.
   from normal lists but is recoverable via `pm task restore`. Find deleted tasks
   with `pm task list --project <id> --include-deleted` (filter where
   `deleted_at != null`).
+- **Working a ticket.** When implementing a ticket: move it to `doing` before
+  starting, `completed` when done and verified.
 
 ## Typical workflow
 
@@ -124,6 +126,9 @@ pm status list --project "$PID"
 
 # 3. Create a task (defaults to first status, usually backlog)
 TID=$(pm task create --project "$PID" --title "Write API tests" | sed -n 's/.*"id": "\(.*\)".*/\1/p' | head -1)
+
+# Claim the ticket before working it (signals in-progress)
+pm task move --id "$TID" --status doing
 
 # 4. Move it forward, one legal step at a time
 pm task move --id "$TID" --status todo

@@ -155,6 +155,26 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
   clears it. There are no roles — auth never grants or denies access, it only
   records who created/owns a task. User deletion is not implemented yet.
 
+## Working a ticket (agent convention)
+
+The commands above are mechanics. When you pick up a ticket to implement it (not
+just batch-editing the board), signal progress through its status so humans and
+other agents can see who's doing what:
+
+1. Claim it. Move the ticket to the project's in-progress state BEFORE you start
+   — usually `doing`. Step legally if there's no direct edge
+   (backlog → todo → doing, one hop at a time): `pm task move --id <id> --status doing`
+2. Do the work.
+3. Finish. When done AND verified, move it forward to the project's completed
+   state (doing → completed). Leave human-only states (tested / released) for a
+   person unless told otherwise.
+4. Blocked / abandoning? Don't leave it silently stuck in `doing`. Move it back
+   (doing → backlog) or record why with
+   `pm task update --id <id> --description "<blocker>"`.
+
+Discover the real states first (`pm status list`) — a project may not have a
+`doing` key; use whatever its first in-progress state is.
+
 ## 4. Typical workflow
 
 ```bash
@@ -169,6 +189,9 @@ pm status list --project "$PID"
 
 # 3. Create a task (defaults to first status, usually backlog)
 TID=$(pm task create --project "$PID" --title "Write API tests" | jq -r .id)
+
+# Claim the ticket before working it (signals in-progress)
+pm task move --id "$TID" --status doing
 
 # 4. Move it forward, one legal step at a time
 pm task move --id "$TID" --status todo
