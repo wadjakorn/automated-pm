@@ -43,6 +43,16 @@ export const api = {
   listProjects: () => req<Project[]>("GET", "/api/projects"),
   createProject: (name: string, description?: string) =>
     req<Project>("POST", "/api/projects", { name, description }),
+  updateProject: (
+    id: string,
+    patch: {
+      name?: string;
+      description?: string | null;
+      remote_repo_url?: string | null;
+      // Required by the server when name or remote_repo_url changes.
+      confirm?: boolean;
+    }
+  ) => req<Project>("PATCH", `/api/projects/${id}`, patch),
   deleteProject: (id: string) => req<{ ok: true }>("DELETE", `/api/projects/${id}`),
 
   // state machine
