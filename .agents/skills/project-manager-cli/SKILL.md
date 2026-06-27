@@ -129,6 +129,12 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
 
 ## 3. Rules you MUST respect
 
+- **Reflect your work in the ticket's status.** When you start implementing a
+  ticket, move it to `doing` FIRST (`pm task move --id <id> --status doing`),
+  before writing any code. When the work is finished, move it to `completed`.
+  Step through each legal edge (e.g. `todo → doing`, `doing → completed`); there
+  is no multi-hop move. This keeps the board honest about what is in progress vs
+  done — do it even when the user only says "implement this ticket".
 - **State machine is per project.** Default chain:
   `backlog → todo → doing → completed → tested → released`. `released` is
   **final** — no moves out of it. Moves only succeed along defined edges.
