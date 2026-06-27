@@ -6,6 +6,7 @@ import { PRIORITIES } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
 import { shareLink, LINK_OPTIONS, type LinkOption } from "@/lib/ticket-link";
+import { Markdown } from "./Markdown";
 import { toast } from "./Toast";
 
 // Slide-over drawer to edit a task: title, description, assignee, status move,
@@ -31,6 +32,7 @@ export function EditDrawer({
   const [description, setDescription] = useState(task.description ?? "");
   const [assignee, setAssignee] = useState(task.assignee_id ?? "");
   const [priority, setPriority] = useState(task.priority);
+  const [descTab, setDescTab] = useState<"edit" | "preview">("preview");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -93,7 +95,7 @@ export function EditDrawer({
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={onClose}>
       <div
-        className="flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto border-l border-border bg-bg-soft p-5"
+        className="flex h-full w-[60%] min-w-[560px] max-w-full flex-col gap-4 overflow-y-auto border-l border-border bg-bg-soft p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -127,13 +129,43 @@ export function EditDrawer({
           className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
         />
 
-        <label className="text-xs text-fg-muted">Description</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={6}
-          className="resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
-        />
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-fg-muted">Description</label>
+            <div className="flex gap-1 text-xs">
+              {(["edit", "preview"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setDescTab(t)}
+                  className={`rounded px-2 py-0.5 capitalize ${
+                    descTab === t
+                      ? "bg-bg-card text-fg"
+                      : "text-fg-muted hover:text-fg"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          {descTab === "edit" ? (
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Markdown supported…"
+              className="min-h-[280px] flex-1 resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+            />
+          ) : (
+            <div className="min-h-[280px] flex-1 overflow-auto rounded border border-border bg-bg-card px-4 py-3">
+              {description.trim() ? (
+                <Markdown>{description}</Markdown>
+              ) : (
+                <span className="text-sm text-fg-subtle">No description.</span>
+              )}
+            </div>
+          )}
+        </div>
 
         <label className="text-xs text-fg-muted">Assignee</label>
         <select

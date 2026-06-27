@@ -47,7 +47,7 @@ function Column({
   };
 
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-lg bg-bg-soft">
+    <div className="flex h-full max-h-full w-72 shrink-0 flex-col rounded-lg bg-bg-soft">
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-medium text-fg">
           {label}
@@ -68,7 +68,7 @@ function Column({
       </div>
       <div
         ref={setNodeRef}
-        className={`flex min-h-[60px] flex-1 flex-col gap-2 p-2 ${
+        className={`flex min-h-[60px] flex-1 flex-col gap-2 overflow-y-auto p-2 ${
           isOver ? "rounded-lg bg-bg-card/60 ring-1 ring-accent" : ""
         }`}
       >
@@ -240,7 +240,7 @@ export function Board() {
             setActive(null);
           }}
         >
-          <div className="flex flex-1 gap-3 overflow-x-auto p-4">
+          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
             {sm?.statuses.map((s) => (
               <Column
                 key={s.key}
