@@ -122,6 +122,7 @@ export function Nav({
       <nav className="ml-auto flex items-center gap-1">
         {link("/", "Board")}
         {link("/settings", "Settings")}
+        {link("/archive", "Archive")}
         {link("/trash", "Trash")}
         <button
           onClick={() => setChoice(nextChoice(choice))}

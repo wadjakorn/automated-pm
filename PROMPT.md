@@ -93,11 +93,14 @@ pm status set-final --project <id|name> --key released --final true
 pm transition add --project <id|name> --from doing --to qa
 pm transition remove --project <id|name> --from doing --to qa
 pm task create --project <id|name> --title "..." [--description ...] [--status backlog] [--priority now]
-pm task list --project <id|name> [--status doing] [--include-deleted] [--priority high]
+pm task list --project <id|name> [--status doing] [--include-deleted] [--include-archived] [--priority high]
 pm task move --id <id> --status doing [--version N]
 pm task update --id <id> [--title ...] [--description ...] [--version N] [--priority high]
 pm task delete --id <id>          # soft
 pm task restore --id <id>
+pm task archive --id <id>         # final-status only; off-board but stays live
+pm task unarchive --id <id>
+pm task archive-final --project <id|name> --status <final-key>   # bulk-archive a final column
 pm task create --project <id|name> --stdin                # one task per stdin line
 
 # Ticket links (shows in both tickets; --type = blocks|blocked-by|causes|caused-by|relates)

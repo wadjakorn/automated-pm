@@ -28,6 +28,7 @@ function Column({
   tasks,
   onOpen,
   onAdd,
+  onArchiveAll,
 }: {
   statusKey: string;
   label: string;
@@ -35,6 +36,7 @@ function Column({
   tasks: Task[];
   onOpen: (t: Task) => void;
   onAdd: (statusKey: string, title: string) => void;
+  onArchiveAll: (statusKey: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: statusKey });
   const [adding, setAdding] = useState(false);
@@ -58,13 +60,24 @@ function Column({
           )}
           <span className="text-xs text-fg-subtle">{tasks.length}</span>
         </div>
-        <button
-          onClick={() => setAdding(true)}
-          className="text-fg-subtle hover:text-fg"
-          title="Add task"
-        >
-          +
-        </button>
+        <div className="flex items-center gap-2">
+          {isFinal && tasks.length > 0 && (
+            <button
+              onClick={() => onArchiveAll(statusKey)}
+              className="rounded text-xs text-fg-subtle hover:text-fg"
+              title={`Archive all ${tasks.length} ticket(s) in ${label}`}
+            >
+              Archive all ({tasks.length})
+            </button>
+          )}
+          <button
+            onClick={() => setAdding(true)}
+            className="text-fg-subtle hover:text-fg"
+            title="Add task"
+          >
+            +
+          </button>
+        </div>
       </div>
       <div
         ref={setNodeRef}
@@ -208,6 +221,25 @@ export function Board() {
     }
   }
 
+  async function archiveAll(statusKey: string) {
+    if (!selectedId) return;
+    const count = tasks.filter((t) => t.status_key === statusKey).length;
+    const label = sm?.statuses.find((s) => s.key === statusKey)?.label ?? statusKey;
+    if (
+      !window.confirm(
+        `Archive all ${count} ticket(s) in “${label}”? They leave the board but stay searchable and openable by link. Find them under Archive.`
+      )
+    )
+      return;
+    try {
+      const { archived } = await api.bulkArchive(selectedId, statusKey);
+      toast(`Archived ${archived.length} ticket(s)`, "success");
+      loadTasks(selectedId);
+    } catch (e: any) {
+      toast(e.message ?? "Failed to archive", "error");
+    }
+  }
+
   // Within a column: priority first (now→low), then rank — mirrors the server.
   const byStatus = (key: string) =>
     tasks
@@ -250,6 +282,7 @@ export function Board() {
                 tasks={byStatus(s.key)}
                 onOpen={(t) => openTask(t.id)}
                 onAdd={addTask}
+                onArchiveAll={archiveAll}
               />
             ))}
           </div>

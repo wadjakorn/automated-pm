@@ -10,6 +10,7 @@ locking, and a JSON **CLI** so an LLM agent can drive the same data the browser 
 - Default statuses: `backlog → todo → doing → completed → tested → released` (released is final).
 - State machine (statuses, transitions, final flags) is **per project** and editable in Settings.
 - Deleting is soft: tasks go to **Trash** and can be restored.
+- Finished tickets in a **final** status can be **archived** (in bulk, per column via "Archive all"): they leave the board but stay live — openable by direct link, searchable (future), and listed under **Archive** to unarchive. Distinct from Trash.
 
 ## Run (no extra install for the user)
 
@@ -66,6 +67,8 @@ pm task list --project $PID
 pm task move --id <task id> --status todo
 pm task delete --id <task id>
 pm task restore --id <task id>
+pm task archive --id <task id>                       # file a final-status ticket off the board
+pm task archive-final --project $PID --status released   # bulk-archive a whole final column
 pm task link add --id <task id> --to <url|id> --type blocks   # link tickets (Jira-style)
 pm task link list --id <task id>
 pm board --project $PID                              # columns view (tasks by status)
