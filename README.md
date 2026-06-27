@@ -77,6 +77,8 @@ printf 'task one\ntask two\n' | pm task create --project $PID --stdin   # bulk
 
 # projects
 pm project update --project $PID --description "updated"
+# name + remote repo URL are guarded edits: they need --confirm
+pm project update --project $PID --name "new-name" --remote-url git@github.com:me/repo.git --confirm
 pm project delete --project $PID                    # soft delete
 
 # state machine

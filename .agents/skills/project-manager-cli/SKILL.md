@@ -131,7 +131,9 @@ pm task link rm   --id <id> --link <linkId>
 
 pm board        --project <id|name>                      # columns view: tasks grouped by status
 
-pm project update --project <id|name> [--name <new>] [--description <text>]
+# changing --name or --remote-url is a GUARDED edit: it needs --confirm (else
+# bad_request). --description is not guarded. --remote-url '' clears the URL.
+pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--confirm]
 pm project delete --project <id|name>                    # soft delete (recoverable via the UI/Trash)
 
 pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>]
