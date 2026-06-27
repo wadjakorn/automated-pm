@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  cc-bridge launchd agent — keeps listener.py running on the dev machine.
+  Ticket: "Machine: headless auth + keepalive (launchd)" (XFy-LLdzb4CB).
+
+  Install:
+    1. Edit the REPLACE_ME values below (home path, Tailscale IP, secret).
+    2. cp cc-bridge/com.you.ccbridge.plist ~/Library/LaunchAgents/
+    3. launchctl load -w ~/Library/LaunchAgents/com.you.ccbridge.plist
+       (reload after edits: launchctl unload … && launchctl load -w …)
+
+  RunAtLoad + KeepAlive => starts at login and is relaunched if it ever exits,
+  so a reboot brings the listener back automatically.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.you.ccbridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>REPLACE_ME_HOME/.cc-bridge/listener.py</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CC_BRIDGE_BIND</key>
+    <string>REPLACE_ME_TAILSCALE_IP</string>   <!-- e.g. 100.x.y.z — NEVER 0.0.0.0 -->
+    <key>CC_BRIDGE_PORT</key>
+    <string>8787</string>
+    <key>CC_BRIDGE_SECRET</key>
+    <string>REPLACE_ME_SHARED_SECRET</string>
+    <key>CC_BRIDGE_HOME</key>
+    <string>REPLACE_ME_HOME/.cc-bridge</string>
+    <!-- Do NOT set ANTHROPIC_API_KEY here: claude must use the Max subscription. -->
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>REPLACE_ME_HOME/.cc-bridge/logs/listener.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>REPLACE_ME_HOME/.cc-bridge/logs/listener.err.log</string>
+</dict>
+</plist>

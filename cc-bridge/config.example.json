@@ -1,0 +1,7 @@
+{
+  "_comment": "cc-bridge listener config. Copy to ~/.cc-bridge/config.json and edit. 'projects' maps a PM project (use the project id from the board URL ?project=<id>, or its unique name) to the local git repo the runner should cd into. Unknown project -> listener returns 404.",
+  "projects": {
+    "lPFgh_dyrALH": "/Users/you/development/agent-kanban",
+    "demo": "/Users/you/development/demo"
+  }
+}

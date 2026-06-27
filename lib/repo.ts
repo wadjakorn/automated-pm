@@ -4,6 +4,7 @@ import { buildDefaultStateMachine, canTransition } from "./statemachine";
 import { badRequest, conflict, illegalTransition, notFound, unauthorized } from "./api-errors";
 import { hashPassword, newApiToken, verifyPassword } from "./auth";
 import { DEFAULT_PRIORITY, isPriority, type Priority } from "./priority";
+import { bridgeConfig, enqueueDelivery, kickDelivery } from "./webhook";
 import {
   edgeFromOption,
   linkLabel,
@@ -460,6 +461,18 @@ export function moveTask(
       "UPDATE tasks SET status_key=?, rank=?, version=version+1, updated_at=? WHERE id=?"
     )
     .run(toStatus, rank, now(), taskId);
+  // cc-bridge: a ticket entering the "Ready" status auto-starts headless Claude
+  // Code on the dev machine. Enqueue a durable delivery (retried if the machine
+  // is offline) and kick a non-blocking drain. Never let a webhook break a move.
+  const cfg = bridgeConfig();
+  if (cfg && toStatus === cfg.readyStatus && t.status_key !== toStatus) {
+    try {
+      enqueueDelivery({ ticketId: taskId, project: t.project_id, action: "new" });
+      kickDelivery();
+    } catch (e) {
+      console.error("cc-bridge enqueue failed:", e);
+    }
+  }
   return getTask(taskId);
 }
 

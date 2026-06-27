@@ -1,23 +1,24 @@
 {
   "version": "0.0.1",
+  "autoPort": true,
   "configurations": [
     {
       "name": "pm-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3005"],
-      "port": 3005
+      "runtimeArgs": ["run", "dev"],
+      "autoPort": true
     },
     {
       "name": "next-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "autoPort": true
     },
     {
       "name": "next-start",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "start"],
-      "port": 3000
+      "autoPort": true
     }
   ]
 }
