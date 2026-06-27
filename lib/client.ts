@@ -1,6 +1,6 @@
 // Browser-side typed fetch helpers. Throw an ApiClientError carrying the
 // parsed JSON body so callers can branch on .code (e.g. conflict, illegal).
-import type { Project, Task, StateMachine, PublicUser } from "./types";
+import type { Project, Task, StateMachine, PublicUser, LinkedTicket } from "./types";
 
 export class ApiClientError extends Error {
   status: number;
@@ -115,4 +115,12 @@ export const api = {
   ) => req<Task>("PATCH", `/api/tasks/${id}`, { ...patch, version }),
   deleteTask: (id: string) => req<{ ok: true }>("DELETE", `/api/tasks/${id}`),
   restoreTask: (id: string) => req<Task>("POST", `/api/tasks/${id}/restore`),
+
+  // ticket links
+  listLinks: (taskId: string) =>
+    req<LinkedTicket[]>("GET", `/api/tasks/${taskId}/links`),
+  addLink: (taskId: string, targetRef: string, type: string) =>
+    req<LinkedTicket>("POST", `/api/tasks/${taskId}/links`, { targetRef, type }),
+  removeLink: (taskId: string, linkId: string) =>
+    req<{ ok: true }>("DELETE", `/api/tasks/${taskId}/links/${linkId}`),
 };

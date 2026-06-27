@@ -99,6 +99,11 @@ pm task update --id <id> [--title ...] [--description ...] [--version N] [--prio
 pm task delete --id <id>          # soft
 pm task restore --id <id>
 pm task create --project <id|name> --stdin                # one task per stdin line
+
+# Ticket links (shows in both tickets; --type = blocks|blocked-by|causes|caused-by|relates)
+pm task link add  --id <id> --to <url|id> --type <type>
+pm task link list --id <id>
+pm task link rm   --id <id> --link <linkId>
 pm board --project <id|name>                              # columns grouped by status
 pm project update --project <id|name> [--name <new>] [--description ...]
 pm project delete --project <id|name>                     # soft delete

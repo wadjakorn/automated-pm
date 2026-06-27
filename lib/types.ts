@@ -73,3 +73,24 @@ export interface TransitionCheck {
   ok: boolean;
   reason?: string;
 }
+
+// Stored verb for a ticket link. One directed row per link; the inverse label
+// (e.g. "blocked by") is derived at read time. `relates` is symmetric.
+export type LinkVerb = "blocks" | "causes" | "relates";
+
+// A link as seen from a given viewer ticket: the verb, whether the viewer is
+// the edge's source (drives the displayed label), and the other ticket's
+// display fields. `task.deleted_at` non-null = the other ticket was trashed.
+export interface LinkedTicket {
+  link_id: string;
+  verb: LinkVerb;
+  is_source: boolean;
+  label: string;
+  task: {
+    id: string;
+    title: string;
+    status_key: string;
+    project_id: string;
+    deleted_at: string | null;
+  };
+}

@@ -116,6 +116,12 @@ pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>] [
 pm task delete  --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
 
+# Ticket links: --to accepts a ticket URL or bare id; --type is one of
+# blocks | blocked-by | causes | caused-by | relates (inverse label derived for the other ticket)
+pm task link add  --id <id> --to <url|id> --type <type>
+pm task link list --id <id>
+pm task link rm   --id <id> --link <linkId>
+
 pm board        --project <id|name>                      # columns view: tasks grouped by status
 
 pm project update --project <id|name> [--name <new>] [--description <text>]

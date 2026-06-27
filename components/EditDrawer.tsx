@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { Task, StateMachine, PublicUser } from "@/lib/types";
+import { useCallback, useEffect, useState } from "react";
+import type { Task, StateMachine, PublicUser, LinkedTicket } from "@/lib/types";
 import { PRIORITIES } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
-import { shareLink } from "@/lib/ticket-link";
+import { shareLink, LINK_OPTIONS, type LinkOption } from "@/lib/ticket-link";
 import { Markdown } from "./Markdown";
 import { toast } from "./Toast";
 
@@ -17,12 +17,16 @@ export function EditDrawer({
   users,
   onClose,
   onChanged,
+  onOpenTask,
 }: {
   task: Task;
   sm: StateMachine;
   users: PublicUser[];
   onClose: () => void;
   onChanged: () => void;
+  // Navigate to another ticket (used by linked-ticket rows). Falls back to a
+  // no-op so the drawer still works if a caller doesn't wire it.
+  onOpenTask?: (id: string) => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
@@ -214,6 +218,8 @@ export function EditDrawer({
           )}
         </div>
 
+        <LinksSection task={task} onOpenTask={onOpenTask} />
+
         <div className="mt-auto flex items-center justify-between">
           <button
             disabled={busy}
@@ -234,6 +240,153 @@ export function EditDrawer({
           id {task.id} · v{task.version}
           {task.creator_username && <> · created by {task.creator_username}</>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Linked tickets: lists existing links grouped by label and lets the user add
+// one by pasting a ticket URL/id and picking a relation. Links live in their
+// own table, so this manages its own state independent of the task's version.
+function LinksSection({
+  task,
+  onOpenTask,
+}: {
+  task: Task;
+  onOpenTask?: (id: string) => void;
+}) {
+  const [links, setLinks] = useState<LinkedTicket[]>([]);
+  const [ref, setRef] = useState("");
+  const [option, setOption] = useState<LinkOption>("relates");
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(() => {
+    api
+      .listLinks(task.id)
+      .then(setLinks)
+      .catch(() => setLinks([]));
+  }, [task.id]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const add = async () => {
+    if (!ref.trim()) return;
+    setBusy(true);
+    try {
+      await api.addLink(task.id, ref.trim(), option);
+      setRef("");
+      reload();
+    } catch (e) {
+      toast((e as ApiClientError).message ?? "Could not add link", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (linkId: string) => {
+    setBusy(true);
+    try {
+      await api.removeLink(task.id, linkId);
+      reload();
+    } catch (e) {
+      toast((e as ApiClientError).message ?? "Could not remove link", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const open = (id: string) => {
+    onOpenTask?.(id);
+  };
+
+  // Group by displayed label so e.g. all "Blocked by" rows sit together.
+  const groups = links.reduce<Record<string, LinkedTicket[]>>((acc, l) => {
+    (acc[l.label] ??= []).push(l);
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <label className="text-xs text-fg-muted">Linked tickets</label>
+
+      {links.length === 0 ? (
+        <div className="mt-1 text-xs text-fg-subtle">No links yet.</div>
+      ) : (
+        <div className="mt-1 flex flex-col gap-2">
+          {Object.entries(groups).map(([label, items]) => (
+            <div key={label}>
+              <div className="text-[10px] uppercase tracking-wide text-fg-subtle">
+                {label}
+              </div>
+              {items.map((l) => (
+                <div
+                  key={l.link_id}
+                  className="flex items-center justify-between gap-2 rounded border border-border bg-bg-card px-2 py-1 text-sm"
+                >
+                  <button
+                    onClick={() => open(l.task.id)}
+                    className="flex-1 truncate text-left text-fg hover:text-accent"
+                    title={l.task.title}
+                  >
+                    <span
+                      className={l.task.deleted_at ? "line-through opacity-60" : ""}
+                    >
+                      {l.task.title || l.task.id}
+                    </span>{" "}
+                    <span className="text-[10px] text-fg-subtle">
+                      {l.task.status_key}
+                      {l.task.project_id !== task.project_id && " · other project"}
+                      {l.task.deleted_at && " · deleted"}
+                    </span>
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => remove(l.link_id)}
+                    className="text-fg-subtle hover:text-red-400"
+                    title="Remove link"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex gap-2">
+        <select
+          value={option}
+          onChange={(e) => setOption(e.target.value as LinkOption)}
+          className="rounded border border-border bg-bg-card px-2 py-1 text-xs text-fg outline-none"
+        >
+          {LINK_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <input
+          value={ref}
+          onChange={(e) => setRef(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder="Paste ticket URL or id…"
+          className="flex-1 rounded border border-border bg-bg-card px-2 py-1 text-xs outline-none"
+        />
+        <button
+          disabled={busy || !ref.trim()}
+          onClick={add}
+          className="rounded border border-border px-2 py-1 text-xs text-fg hover:bg-bg-card disabled:opacity-50"
+        >
+          Add
+        </button>
       </div>
     </div>
   );

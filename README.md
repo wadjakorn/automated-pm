@@ -66,6 +66,8 @@ pm task list --project $PID
 pm task move --id <task id> --status todo
 pm task delete --id <task id>
 pm task restore --id <task id>
+pm task link add --id <task id> --to <url|id> --type blocks   # link tickets (Jira-style)
+pm task link list --id <task id>
 pm board --project $PID                              # columns view (tasks by status)
 printf 'task one\ntask two\n' | pm task create --project $PID --stdin   # bulk
 # aliases: pm task ls / mv / rm

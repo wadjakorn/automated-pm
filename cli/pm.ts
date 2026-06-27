@@ -127,6 +127,12 @@ const HELP = `pm — Project Manager CLI
   pm task delete --id <id>
   pm task restore --id <id>
 
+  # ticket links — --to accepts a ticket URL or bare id; --type is one of
+  # blocks | blocked-by | causes | caused-by | relates
+  pm task link add  --id <id> --to <url|id> --type <type>
+  pm task link list --id <id>
+  pm task link rm   --id <id> --link <linkId>
+
   pm board --project <id|name>          # columns view: tasks grouped by status
 `;
 
@@ -185,6 +191,39 @@ async function main() {
       );
     // board — Task 7 fills this in.
     return board(sf);
+  }
+
+  // `task link <add|list|rm>` has a sub-action positional, so it can't use the
+  // flat `${group} ${action}` switch — handle it before flags are parsed.
+  if (group === "task" && rawAction === "link") {
+    // Match the user-facing sub-action verbatim (not via ALIAS) so the cases
+    // read the same as what the user types.
+    const sub = rest[0];
+    const lf = parseFlags(rest.slice(1));
+    switch (sub) {
+      case "add":
+        return emit(
+          "raw",
+          await api("POST", `/api/tasks/${need(lf, "id")}/links`, {
+            targetRef: need(lf, "to"),
+            type: need(lf, "type"),
+          })
+        );
+      case "list":
+      case "ls":
+        return emit("raw", await api("GET", `/api/tasks/${need(lf, "id")}/links`));
+      case "rm":
+      case "remove":
+        return emit(
+          "ok",
+          await api(
+            "DELETE",
+            `/api/tasks/${need(lf, "id")}/links/${need(lf, "link")}`
+          )
+        );
+      default:
+        fail(`unknown command "task link ${rest[0] ?? ""}"`, { help: HELP });
+    }
   }
 
   const f = parseFlags(rest);
