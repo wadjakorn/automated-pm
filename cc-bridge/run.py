@@ -101,7 +101,7 @@ Steps:
 Guardrails: never set ANTHROPIC_API_KEY. Keep secrets out of the repo. Idempotent."""
 
 
-def run_claude(prompt_or_order: str, resume_sid: str, logfile: Path) -> str:
+def run_claude(prompt_or_order: str, resume_sid: str, logfile: Path) -> "tuple[str, int]":
     # Subscription auth: strip any API credentials from the child environment.
     env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
     env["PM_API"] = PM_API
@@ -113,7 +113,8 @@ def run_claude(prompt_or_order: str, resume_sid: str, logfile: Path) -> str:
     if proc.stderr:
         log(logfile, "stderr: " + proc.stderr.strip()[:2000])
     log(logfile, "stdout: " + proc.stdout.strip()[:4000])
-    return proc.stdout
+    log(logfile, f"claude exited {proc.returncode}")
+    return proc.stdout, proc.returncode
 
 
 def parse_session_id(out: str) -> str:
@@ -127,6 +128,10 @@ def main():
     for name, val in (("TICKET", TICKET), ("PROJECT", PROJECT), ("REPO", REPO)):
         if not val:
             die(f"{name} required")
+    # Defense-in-depth: the listener already validates action, but never trust an
+    # unexpected value here (these env vars come from the spawner). Anything that
+    # isn't "resume" is treated as a fresh run.
+    action = ACTION if ACTION in ("new", "resume") else "new"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logfile = LOG_DIR / f"{slug(PROJECT)}-{slug(TICKET)}.log"
     if not Path(REPO).is_dir():
@@ -139,21 +144,25 @@ def main():
     if fcntl is not None:
         log(logfile, "waiting for repo lock")
         fcntl.flock(lock_fd, fcntl.LOCK_EX)  # blocks until the other ticket finishes
-    log(logfile, f"start action={ACTION} ticket={TICKET} project={PROJECT} repo={REPO}")
+    log(logfile, f"start action={action} ticket={TICKET} project={PROJECT} repo={REPO}")
 
-    sid = get_session() if ACTION == "resume" else ""
-    if ACTION == "resume" and sid:
+    sid = get_session() if action == "resume" else ""
+    if action == "resume" and sid:
         text = ORDER or "Continue working this ticket; new feedback arrived."
-        out = run_claude(text, sid, logfile)
+        out, rc = run_claude(text, sid, logfile)
     else:
-        if ACTION == "resume":
+        if action == "resume":
             log(logfile, "resume requested but no stored session; cold NEW run")
-        out = run_claude(new_prompt(), "", logfile)
+        out, rc = run_claude(new_prompt(), "", logfile)
 
     new_sid = parse_session_id(out)
     save_session(new_sid)
-    log(logfile, f"done action={ACTION} ticket={TICKET} session={new_sid or 'unknown'}")
+    status = "ok" if rc == 0 else f"FAILED (claude exit {rc})"
+    log(logfile, f"done action={action} ticket={TICKET} session={new_sid or 'unknown'} result={status}")
     # lock_fd closes at process exit -> flock released.
+    if rc != 0:
+        # Surface the failure to the spawner instead of exiting 0 on a broken run.
+        die(f"claude exited {rc}; see {logfile}", rc)
 
 
 if __name__ == "__main__":
