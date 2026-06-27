@@ -85,6 +85,10 @@ pm user create --username alice --password secret   # -> { user, api_token }
 export PM_TOKEN=<api_token>                          # creator of new tasks = alice
 pm task create --project $PID --title "Triage bug" --assignee alice
 pm task list --project $PID --assignee alice
+
+# priority: low|medium|high|now (default medium); lists auto-sort now→high→medium→low
+pm task create --project $PID --title "Prod down" --priority now
+pm task list --project $PID --priority now           # filter by priority
 ```
 
 `--project` accepts a project **id or its name** — names are unique among live

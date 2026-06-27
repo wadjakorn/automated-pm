@@ -92,10 +92,10 @@ pm status add --project <id|name> --key qa --label "QA" [--final]
 pm status set-final --project <id|name> --key released --final true
 pm transition add --project <id|name> --from doing --to qa
 pm transition remove --project <id|name> --from doing --to qa
-pm task create --project <id|name> --title "..." [--description ...] [--status backlog]
-pm task list --project <id|name> [--status doing] [--include-deleted]
+pm task create --project <id|name> --title "..." [--description ...] [--status backlog] [--priority now]
+pm task list --project <id|name> [--status doing] [--include-deleted] [--priority high]
 pm task move --id <id> --status doing [--version N]
-pm task update --id <id> [--title ...] [--description ...] [--version N]
+pm task update --id <id> [--title ...] [--description ...] [--version N] [--priority high]
 pm task delete --id <id>          # soft
 pm task restore --id <id>
 pm task create --project <id|name> --stdin                # one task per stdin line
@@ -168,6 +168,10 @@ identity, when present, fills new nullable columns.
 - **CLI:** `pm user create|list`, `pm login`, `pm whoami`; `task create/list`
   gain `--assignee <id|username>`, `task update` gains `--assignee`/`--unassign`.
 - **Assignment:** assignee must be an existing user (validated). User deletion deferred.
+- **Priority:** fixed scale `low|medium|high|now` (default `medium`) on every
+  task. `GET /api/tasks` takes `?priority=`; create/update accept `priority`;
+  each status column auto-sorts `now → high → medium → low`, then rank. CLI:
+  `--priority` on `task create/list/update`.
 
 ## Deferred (YAGNI — do not build now)
 No hard purge of trash. No SSE/websocket (polling only). No single-binary

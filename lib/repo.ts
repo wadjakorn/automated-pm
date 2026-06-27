@@ -3,7 +3,19 @@ import { getDb } from "./db";
 import { buildDefaultStateMachine, canTransition } from "./statemachine";
 import { badRequest, conflict, illegalTransition, notFound, unauthorized } from "./api-errors";
 import { hashPassword, newApiToken, verifyPassword } from "./auth";
+import { DEFAULT_PRIORITY, isPriority, type Priority } from "./priority";
 import type { Project, Status, Task, StateMachine, User, PublicUser } from "./types";
+
+// Validate an optional priority input; returns the canonical value or throws.
+function normPriority(p: unknown, fallback: Priority): Priority {
+  if (p === undefined || p === null || p === "") return fallback;
+  if (!isPriority(p)) throw badRequest(`unknown priority "${p}"`);
+  return p;
+}
+
+// SQL fragment ordering a column top→bottom: now → high → medium → low.
+const PRIORITY_ORDER_SQL =
+  "CASE t.priority WHEN 'now' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END";
 
 const now = () => new Date().toISOString();
 const id = () => nanoid(12);
@@ -290,7 +302,12 @@ function nextRank(projectId: string, statusKey: string): number {
 
 export function listTasks(
   projectId: string,
-  opts: { status?: string; includeDeleted?: boolean; assignee?: string } = {}
+  opts: {
+    status?: string;
+    includeDeleted?: boolean;
+    assignee?: string;
+    priority?: string;
+  } = {}
 ): Task[] {
   projectId = getProject(projectId).id;
   const clauses = ["t.project_id = ?"];
@@ -304,8 +321,15 @@ export function listTasks(
     clauses.push("t.assignee_id = ?");
     params.push(resolveUserId(opts.assignee));
   }
+  if (opts.priority) {
+    clauses.push("t.priority = ?");
+    params.push(normPriority(opts.priority, DEFAULT_PRIORITY));
+  }
+  // Within a status column tasks sort by priority (now→low), then rank.
   return getDb()
-    .prepare(`${TASK_SELECT} WHERE ${clauses.join(" AND ")} ORDER BY t.status_key, t.rank`)
+    .prepare(
+      `${TASK_SELECT} WHERE ${clauses.join(" AND ")} ORDER BY t.status_key, ${PRIORITY_ORDER_SQL}, t.rank`
+    )
     .all(...params) as Task[];
 }
 
@@ -329,6 +353,7 @@ export function createTask(
     // compat). assignee is an id or username, validated if present.
     creatorId?: string | null;
     assignee?: string | null;
+    priority?: string;
   }
 ): Task {
   projectId = getProject(projectId).id;
@@ -339,11 +364,12 @@ export function createTask(
     throw badRequest(`unknown status "${statusKey}"`);
   const assigneeId =
     data.assignee == null || data.assignee === "" ? null : resolveUserId(data.assignee);
+  const priority = normPriority(data.priority, DEFAULT_PRIORITY);
   const tid = id();
   const ts = now();
   getDb()
     .prepare(
-      "INSERT INTO tasks (id, project_id, title, description, status_key, rank, version, created_at, updated_at, creator_id, assignee_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+      "INSERT INTO tasks (id, project_id, title, description, status_key, priority, rank, version, created_at, updated_at, creator_id, assignee_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
     )
     .run(
       tid,
@@ -351,6 +377,7 @@ export function createTask(
       data.title.trim(),
       data.description ?? null,
       statusKey,
+      priority,
       nextRank(projectId, statusKey),
       1,
       ts,
@@ -374,6 +401,8 @@ export function updateTask(
     version?: number;
     // assignee: undefined = leave as-is; null = unassign; string = id|username.
     assignee?: string | null;
+    // priority: undefined = leave as-is; otherwise validated against the scale.
+    priority?: string;
   }
 ): Task {
   const t = getTask(taskId);
@@ -388,11 +417,13 @@ export function updateTask(
       : patch.assignee === null || patch.assignee === ""
         ? null
         : resolveUserId(patch.assignee);
+  const priority =
+    patch.priority === undefined ? t.priority : normPriority(patch.priority, t.priority);
   getDb()
     .prepare(
-      "UPDATE tasks SET title=?, description=?, assignee_id=?, version=version+1, updated_at=? WHERE id=?"
+      "UPDATE tasks SET title=?, description=?, assignee_id=?, priority=?, version=version+1, updated_at=? WHERE id=?"
     )
-    .run(title, description, assigneeId, now(), taskId);
+    .run(title, description, assigneeId, priority, now(), taskId);
   return getTask(taskId);
 }
 

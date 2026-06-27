@@ -3,6 +3,25 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task } from "@/lib/types";
+import type { Priority } from "@/lib/priority";
+
+// Color per priority. now/high stand out; medium is the quiet default; low dims.
+const PRIORITY_STYLE: Record<Priority, string> = {
+  now: "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
+  high: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+  medium: "bg-bg-soft text-fg-muted",
+  low: "bg-bg-soft text-fg-subtle",
+};
+
+function PriorityBadge({ priority }: { priority: Priority }) {
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${PRIORITY_STYLE[priority] ?? PRIORITY_STYLE.medium}`}
+    >
+      {priority}
+    </span>
+  );
+}
 
 export function TaskCard({
   task,
@@ -31,7 +50,10 @@ export function TaskCard({
         isDragging && !overlay ? "opacity-30" : ""
       } ${overlay ? "rotate-2 shadow-xl" : "hover:border-fg-subtle"}`}
     >
-      <div className="font-medium text-fg">{task.title}</div>
+      <div className="mb-1 flex items-start gap-2">
+        <PriorityBadge priority={task.priority} />
+        <span className="font-medium text-fg">{task.title}</span>
+      </div>
       {task.description && (
         <div className="mt-1 line-clamp-2 text-xs text-fg-muted">
           {task.description}

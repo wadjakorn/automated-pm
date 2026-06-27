@@ -8,6 +8,7 @@ const t = (id: string): Task => ({
   title: id,
   description: null,
   status_key: "todo",
+  priority: "medium",
   rank: 1,
   version: 1,
   created_at: "",

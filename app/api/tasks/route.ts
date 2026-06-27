@@ -5,7 +5,7 @@ import { currentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET ?project=&status=&includeDeleted=&assignee=
+// GET ?project=&status=&includeDeleted=&assignee=&priority=
 export function GET(req: NextRequest) {
   return handle(() => {
     const sp = new URL(req.url).searchParams;
@@ -15,6 +15,7 @@ export function GET(req: NextRequest) {
       status: sp.get("status") ?? undefined,
       includeDeleted: sp.get("includeDeleted") === "true",
       assignee: sp.get("assignee") ?? undefined,
+      priority: sp.get("priority") ?? undefined,
     });
   });
 }

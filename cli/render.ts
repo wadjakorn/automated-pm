@@ -49,8 +49,8 @@ function renderProject(p: any, o: RenderOpts): string {
 function renderTasks(list: any[]): string {
   if (!list.length) return "(no tasks)";
   return table(
-    ["ID", "STATUS", "TITLE", "VER"],
-    list.map((t) => [t.id, t.status_key, t.title, "v" + t.version])
+    ["ID", "STATUS", "PRIO", "TITLE", "VER"],
+    list.map((t) => [t.id, t.status_key, t.priority ?? "", t.title, "v" + t.version])
   );
 }
 
