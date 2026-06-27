@@ -208,7 +208,7 @@ export function EditDrawer({
           className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
         />
 
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <label className="text-xs text-fg-muted">Description</label>
             <div className="flex items-center gap-3 text-xs">
@@ -257,10 +257,10 @@ export function EditDrawer({
               onChange={(e) => setDescription(e.target.value)}
               onPaste={onPaste}
               placeholder="Markdown supported. Paste or attach an image…"
-              className="min-h-[280px] flex-1 resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+              className="min-h-[280px] resize-y rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
             />
           ) : (
-            <div className="min-h-[280px] flex-1 overflow-auto rounded border border-border bg-bg-card px-4 py-3">
+            <div className="min-h-[280px] overflow-auto rounded border border-border bg-bg-card px-4 py-3">
               {description.trim() ? (
                 <Markdown>{description}</Markdown>
               ) : (
