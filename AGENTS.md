@@ -80,6 +80,11 @@ pm task delete --id <id>          # soft delete (recoverable)
 pm task restore --id <id>
 pm task create --project <id|name> --stdin          # one task per non-empty stdin line
 
+# Ticket links: --to is a ticket URL or bare id; --type = blocks|blocked-by|causes|caused-by|relates
+pm task link add  --id <id> --to <url|id> --type <type>   # link shows in BOTH tickets (inverse label)
+pm task link list --id <id>
+pm task link rm   --id <id> --link <linkId>
+
 pm board --project <id|name>                        # columns view: tasks grouped by status
 
 pm project update --project <id|name> [--name <new>] [--description <text>]

@@ -4,7 +4,21 @@ import { buildDefaultStateMachine, canTransition } from "./statemachine";
 import { badRequest, conflict, illegalTransition, notFound, unauthorized } from "./api-errors";
 import { hashPassword, newApiToken, verifyPassword } from "./auth";
 import { DEFAULT_PRIORITY, isPriority, type Priority } from "./priority";
-import type { Project, Status, Task, StateMachine, User, PublicUser } from "./types";
+import {
+  edgeFromOption,
+  linkLabel,
+  parseTicketRef,
+  type LinkOption,
+} from "./ticket-link";
+import type {
+  Project,
+  Status,
+  Task,
+  StateMachine,
+  User,
+  PublicUser,
+  LinkedTicket,
+} from "./types";
 
 // Validate an optional priority input; returns the canonical value or throws.
 function normPriority(p: unknown, fallback: Priority): Priority {
@@ -461,4 +475,71 @@ export function restoreTask(taskId: string): Task {
     .prepare("UPDATE tasks SET deleted_at=NULL, version=version+1, updated_at=? WHERE id=?")
     .run(now(), taskId);
   return getTask(taskId);
+}
+
+// ---------------- Task links ----------------
+
+// Map a stored edge row to the shape a *viewer* ticket sees: the label flips
+// depending on whether the viewer is the edge's source. The other ticket is
+// fetched with includeDeleted so a link to a trashed task still renders.
+function toLinkedTicket(row: any, viewerId: string): LinkedTicket {
+  const isSource = row.source_id === viewerId;
+  const otherId = isSource ? row.target_id : row.source_id;
+  const other = getTask(otherId, true);
+  return {
+    link_id: row.id,
+    verb: row.type,
+    is_source: isSource,
+    label: linkLabel(row.type, isSource),
+    task: {
+      id: other.id,
+      title: other.title,
+      status_key: other.status_key,
+      project_id: other.project_id,
+      deleted_at: other.deleted_at,
+    },
+  };
+}
+
+export function createLink(
+  thisId: string,
+  targetRef: string,
+  option: LinkOption
+): LinkedTicket {
+  getTask(thisId); // 404 if the source ticket is gone
+  const otherId = parseTicketRef(targetRef ?? "");
+  if (!otherId) throw badRequest("could not read a ticket id from that link");
+  if (otherId === thisId) throw badRequest("a ticket cannot link to itself");
+  getTask(otherId); // target must be a live task (not_found if missing/deleted)
+  const edge = edgeFromOption(thisId, otherId, option);
+  const lid = id();
+  try {
+    getDb()
+      .prepare(
+        "INSERT INTO task_links (id, source_id, target_id, type, created_at) VALUES (?,?,?,?,?)"
+      )
+      .run(lid, edge.sourceId, edge.targetId, edge.verb, now());
+  } catch (e: any) {
+    if (String(e?.message ?? "").includes("UNIQUE"))
+      throw badRequest("that link already exists");
+    throw e;
+  }
+  const row = getDb().prepare("SELECT * FROM task_links WHERE id=?").get(lid);
+  return toLinkedTicket(row, thisId);
+}
+
+export function listLinksFor(taskId: string): LinkedTicket[] {
+  getTask(taskId);
+  const rows = getDb()
+    .prepare(
+      "SELECT * FROM task_links WHERE source_id=? OR target_id=? ORDER BY created_at"
+    )
+    .all(taskId, taskId) as any[];
+  return rows.map((r) => toLinkedTicket(r, taskId));
+}
+
+export function removeLink(linkId: string): { ok: true } {
+  const r = getDb().prepare("DELETE FROM task_links WHERE id=?").run(linkId);
+  if (r.changes === 0) throw notFound("link");
+  return { ok: true };
 }
