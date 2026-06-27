@@ -5,6 +5,9 @@ export interface Project {
   id: string;
   name: string;
   description: string | null;
+  // Git/remote URL the project tracks (agents read it to know which repo to
+  // operate on). Nullable; edited only via the guarded updateProject path.
+  remote_repo_url: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

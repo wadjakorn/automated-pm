@@ -5,6 +5,7 @@ import { badRequest, conflict, illegalTransition, notFound, unauthorized } from 
 import { hashPassword, newApiToken, verifyPassword } from "./auth";
 import { DEFAULT_PRIORITY, isPriority, type Priority } from "./priority";
 import { bridgeConfig, enqueueDelivery, kickDelivery } from "./webhook";
+import { isRemoteRepoUrl, normalizeRemoteRepoUrl } from "./repo-url";
 import {
   edgeFromOption,
   linkLabel,
@@ -159,21 +160,47 @@ export function createProject(name: string, description?: string): Project {
 
 export function updateProject(
   projectId: string,
-  patch: { name?: string; description?: string | null }
+  patch: {
+    name?: string;
+    description?: string | null;
+    remote_repo_url?: string | null;
+    // Guard: changing name or remote_repo_url is a sensitive edit (the name is
+    // an identifier; the URL is what agents act on). Require an explicit
+    // confirm so neither a human nor an agent changes them by accident.
+    confirm?: boolean;
+  }
 ): Project {
   const p = getProject(projectId);
   const name = patch.name?.trim() ?? p.name;
   const description =
     patch.description === undefined ? p.description : patch.description;
-  if (name !== p.name) {
+  const remoteRepoUrl =
+    patch.remote_repo_url === undefined
+      ? p.remote_repo_url
+      : normalizeRemoteRepoUrl(patch.remote_repo_url);
+
+  const nameChanged = name !== p.name;
+  const urlChanged = remoteRepoUrl !== p.remote_repo_url;
+  if ((nameChanged || urlChanged) && patch.confirm !== true) {
+    throw badRequest(
+      "changing a project name or remote repository URL is a sensitive edit; pass confirm:true (CLI: --confirm)"
+    );
+  }
+  if (!name) throw badRequest("name is required");
+  if (nameChanged) {
     const dup = getDb()
       .prepare("SELECT 1 FROM projects WHERE name = ? AND id != ? AND deleted_at IS NULL")
       .get(name, p.id);
     if (dup) throw badRequest(`project name "${name}" already exists`);
   }
+  if (remoteRepoUrl !== null && !isRemoteRepoUrl(remoteRepoUrl)) {
+    throw badRequest(`invalid remote repository URL "${remoteRepoUrl}"`);
+  }
   getDb()
-    .prepare("UPDATE projects SET name=?, description=?, updated_at=? WHERE id=?")
-    .run(name, description, now(), p.id);
+    .prepare(
+      "UPDATE projects SET name=?, description=?, remote_repo_url=?, updated_at=? WHERE id=?"
+    )
+    .run(name, description, remoteRepoUrl, now(), p.id);
   return getProject(p.id);
 }
 

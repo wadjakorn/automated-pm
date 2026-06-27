@@ -108,7 +108,7 @@ pm task link add  --id <id> --to <url|id> --type <type>
 pm task link list --id <id>
 pm task link rm   --id <id> --link <linkId>
 pm board --project <id|name>                              # columns grouped by status
-pm project update --project <id|name> [--name <new>] [--description ...]
+pm project update --project <id|name> [--name <new>] [--description ...] [--remote-url <url>] [--confirm]  # name/url need --confirm
 pm project delete --project <id|name>                     # soft delete
 pm status update --project <id|name> --key <key> [--label ...] [--final <bool>] [--order N]
 # aliases: ls=list, mv=move, rm=delete

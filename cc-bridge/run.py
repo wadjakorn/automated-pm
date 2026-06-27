@@ -138,31 +138,36 @@ def main():
         log(logfile, f"repo not found: {REPO}")
         die(f"repo not found: {REPO}")
 
-    # --- per-repo lock (real fcntl.flock; auto-released when this process exits) ---
+    # --- per-repo lock (real fcntl.flock) -------------------------------------
+    # Held for the whole run so two tickets never share a working tree. The fd is
+    # closed explicitly in `finally` (which also releases the flock); process exit
+    # would release it too, but closing here avoids leaking it on long runs.
     lock_path = Path("/tmp") / f"cc-{slug(PROJECT)}.lock"
     lock_fd = open(lock_path, "w")
-    if fcntl is not None:
-        log(logfile, "waiting for repo lock")
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)  # blocks until the other ticket finishes
-    log(logfile, f"start action={action} ticket={TICKET} project={PROJECT} repo={REPO}")
+    try:
+        if fcntl is not None:
+            log(logfile, "waiting for repo lock")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)  # blocks until the other ticket finishes
+        log(logfile, f"start action={action} ticket={TICKET} project={PROJECT} repo={REPO}")
 
-    sid = get_session() if action == "resume" else ""
-    if action == "resume" and sid:
-        text = ORDER or "Continue working this ticket; new feedback arrived."
-        out, rc = run_claude(text, sid, logfile)
-    else:
-        if action == "resume":
-            log(logfile, "resume requested but no stored session; cold NEW run")
-        out, rc = run_claude(new_prompt(), "", logfile)
+        sid = get_session() if action == "resume" else ""
+        if action == "resume" and sid:
+            text = ORDER or "Continue working this ticket; new feedback arrived."
+            out, rc = run_claude(text, sid, logfile)
+        else:
+            if action == "resume":
+                log(logfile, "resume requested but no stored session; cold NEW run")
+            out, rc = run_claude(new_prompt(), "", logfile)
 
-    new_sid = parse_session_id(out)
-    save_session(new_sid)
-    status = "ok" if rc == 0 else f"FAILED (claude exit {rc})"
-    log(logfile, f"done action={action} ticket={TICKET} session={new_sid or 'unknown'} result={status}")
-    # lock_fd closes at process exit -> flock released.
-    if rc != 0:
-        # Surface the failure to the spawner instead of exiting 0 on a broken run.
-        die(f"claude exited {rc}; see {logfile}", rc)
+        new_sid = parse_session_id(out)
+        save_session(new_sid)
+        status = "ok" if rc == 0 else f"FAILED (claude exit {rc})"
+        log(logfile, f"done action={action} ticket={TICKET} session={new_sid or 'unknown'} result={status}")
+        if rc != 0:
+            # Surface the failure to the spawner instead of exiting 0 on a broken run.
+            die(f"claude exited {rc}; see {logfile}", rc)
+    finally:
+        lock_fd.close()  # releases the flock
 
 
 if __name__ == "__main__":

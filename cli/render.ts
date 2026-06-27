@@ -37,13 +37,19 @@ const json = (d: unknown) => JSON.stringify(d, null, 2);
 function renderProjects(list: any[]): string {
   if (!list.length) return "(no projects)";
   return table(
-    ["ID", "NAME", "DESCRIPTION", "CREATED"],
-    list.map((p) => [p.id, p.name, p.description ?? "", String(p.created_at ?? "").slice(0, 10)])
+    ["ID", "NAME", "REMOTE", "CREATED"],
+    list.map((p) => [
+      p.id,
+      p.name,
+      p.remote_repo_url ?? "",
+      String(p.created_at ?? "").slice(0, 10),
+    ])
   );
 }
 
 function renderProject(p: any, o: RenderOpts): string {
-  return `${paint("✓", ANSI.green, o.color)} project ${p.name} (${p.id})`;
+  const repo = p.remote_repo_url ? `  ${paint(p.remote_repo_url, ANSI.dim, o.color)}` : "";
+  return `${paint("✓", ANSI.green, o.color)} project ${p.name} (${p.id})${repo}`;
 }
 
 function renderTasks(list: any[]): string {

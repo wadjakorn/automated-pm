@@ -103,7 +103,8 @@ const HELP = `pm — Project Manager CLI
 
   pm project create --name <name> [--description <text>]
   pm project list
-  pm project update --project <id|name> [--name <new>] [--description <text>]
+  # changing --name or --remote-url is a guarded edit: it needs --confirm.
+  pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--confirm]
   pm project delete --project <id|name>
 
   # --project accepts a project id OR its (unique) name, e.g. --project 'demo'
@@ -262,6 +263,11 @@ async function main() {
         await api("PATCH", `/api/projects/${proj(f)}`, {
           name: typeof f.name === "string" ? f.name : undefined,
           description: typeof f.description === "string" ? f.description : undefined,
+          // --remote-url '' clears it; the server normalizes/validates.
+          remote_repo_url:
+            typeof f["remote-url"] === "string" ? f["remote-url"] : undefined,
+          // Guard: the server rejects a name/URL change unless confirm is true.
+          confirm: f.confirm === true,
         })
       );
     case "project delete":

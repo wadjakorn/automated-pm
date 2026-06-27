@@ -157,6 +157,16 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE tasks ADD COLUMN archived_at TEXT");
   }
 
+  // Remote repository URL: the Git/remote URL the project tracks (agents read
+  // it to know which repo to operate on). Nullable, no default → old rows stay
+  // NULL (backward compat). Same idempotent table_info guard as the task cols.
+  const projectCols = new Set(
+    (db.prepare("PRAGMA table_info(projects)").all() as { name: string }[]).map((c) => c.name)
+  );
+  if (!projectCols.has("remote_repo_url")) {
+    db.exec("ALTER TABLE projects ADD COLUMN remote_repo_url TEXT");
+  }
+
   // Project names are unique among live (non-deleted) projects, so `--project`
   // can take a name instead of an id. Partial index ignores soft-deleted rows,
   // so a name frees up after its project is trashed. Best-effort: if a legacy
