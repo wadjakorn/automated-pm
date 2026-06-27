@@ -115,4 +115,14 @@ export const api = {
   ) => req<Task>("PATCH", `/api/tasks/${id}`, { ...patch, version }),
   deleteTask: (id: string) => req<{ ok: true }>("DELETE", `/api/tasks/${id}`),
   restoreTask: (id: string) => req<Task>("POST", `/api/tasks/${id}/restore`),
+
+  // image upload (multipart, separate from the JSON `req` helper above).
+  uploadImage: async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/uploads", { method: "POST", body: fd, cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiClientError(res.status, json);
+    return json as { id: string; url: string; mime: string; size: number };
+  },
 };

@@ -77,6 +77,20 @@ function migrate(db: Database.Database) {
       expires_at TEXT NOT NULL
     );
 
+    -- Image attachments embedded in task descriptions. The bytes live on disk
+    -- under data/uploads/<id>.<ext> (NOT in the DB, to keep pm.db small); this
+    -- row is the metadata + the source of truth for what to back up. Anonymous
+    -- uploads have creator_id NULL (auth is attribution-only, like tasks).
+    CREATE TABLE IF NOT EXISTS uploads (
+      id         TEXT PRIMARY KEY,
+      ext        TEXT NOT NULL,
+      mime       TEXT NOT NULL,
+      size       INTEGER NOT NULL,
+      orig_name  TEXT,
+      created_at TEXT NOT NULL,
+      creator_id TEXT REFERENCES users(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_statuses_project ON statuses(project_id);
     CREATE INDEX IF NOT EXISTS idx_transitions_project ON transitions(project_id);

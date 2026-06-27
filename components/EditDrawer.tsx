@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Task, StateMachine, PublicUser } from "@/lib/types";
 import { PRIORITIES } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
 import { shareLink } from "@/lib/ticket-link";
+import { compressImage, exceedsHardMax } from "@/lib/image-compress";
+import { Markdown } from "./Markdown";
 import { toast } from "./Toast";
 
 // Slide-over drawer to edit a task: title, description, assignee, status move,
@@ -28,13 +30,70 @@ export function EditDrawer({
   const [assignee, setAssignee] = useState(task.assignee_id ?? "");
   const [priority, setPriority] = useState(task.priority);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setTitle(task.title);
     setDescription(task.description ?? "");
     setAssignee(task.assignee_id ?? "");
     setPriority(task.priority);
+    setPreview(false);
   }, [task]);
+
+  // Insert text at the textarea caret (or append), keeping React state in sync.
+  function insertAtCaret(snippet: string) {
+    const ta = taRef.current;
+    if (!ta) {
+      setDescription((d) => d + snippet);
+      return;
+    }
+    const start = ta.selectionStart ?? description.length;
+    const end = ta.selectionEnd ?? description.length;
+    const next = description.slice(0, start) + snippet + description.slice(end);
+    setDescription(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      const pos = start + snippet.length;
+      ta.setSelectionRange(pos, pos);
+    });
+  }
+
+  // Compress (client-side) then upload, then insert the markdown image.
+  async function uploadAndInsert(file: File) {
+    setUploading(true);
+    try {
+      const { file: out } = await compressImage(file);
+      if (exceedsHardMax(out)) {
+        toast(
+          `Image is ${(out.size / 1024 / 1024).toFixed(1)}MB after compression; max is 10MB`,
+          "error"
+        );
+        return;
+      }
+      const { url } = await api.uploadImage(out);
+      const alt = (file.name || "image").replace(/\.[^.]+$/, "");
+      insertAtCaret(`\n![${alt}](${url})\n`);
+      toast("Image uploaded", "success");
+    } catch (e) {
+      toast((e as ApiClientError)?.message ?? "Upload failed", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const img = Array.from(e.clipboardData.items).find((it) =>
+      it.type.startsWith("image/")
+    );
+    if (!img) return;
+    const file = img.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    void uploadAndInsert(file);
+  }
 
   const targets = allowedTargets(sm, task.status_key);
   const statusLabel = (k: string) =>
@@ -123,13 +182,55 @@ export function EditDrawer({
           className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
         />
 
-        <label className="text-xs text-fg-muted">Description</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={6}
-          className="resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-fg-muted">Description</label>
+          <div className="flex items-center gap-3 text-xs">
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="text-fg-muted hover:text-fg disabled:opacity-50"
+              title="Attach image"
+            >
+              {uploading ? "Uploading…" : "📎 Image"}
+            </button>
+            <button
+              onClick={() => setPreview((p) => !p)}
+              className="text-fg-muted hover:text-fg"
+            >
+              {preview ? "Edit" : "Preview"}
+            </button>
+          </div>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void uploadAndInsert(f);
+            e.target.value = "";
+          }}
         />
+        {preview ? (
+          <div className="min-h-[8rem] overflow-auto rounded border border-border bg-bg-card px-3 py-2 text-sm">
+            {description ? (
+              <Markdown source={description} />
+            ) : (
+              <span className="text-fg-subtle">Nothing to preview.</span>
+            )}
+          </div>
+        ) : (
+          <textarea
+            ref={taRef}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onPaste={onPaste}
+            rows={6}
+            placeholder="Markdown supported. Paste or attach an image…"
+            className="resize-none rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+          />
+        )}
 
         <label className="text-xs text-fg-muted">Assignee</label>
         <select
