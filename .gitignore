@@ -14,3 +14,7 @@ tsconfig.tsbuildinfo
 .env.local
 # SDD scratch
 .superpowers/
+
+# Python bytecode (cc-bridge)
+__pycache__/
+*.pyc

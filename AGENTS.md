@@ -103,6 +103,13 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
 `--assignee` accepts a user **id or username**; assignee must be an existing
 user. Creator is set from `PM_TOKEN` (the authenticated caller), not a flag.
 
+- `pm ready [--project <id|name>] [--assignee <id|username>]` — list
+  ready-to-work tickets (status `todo`) across projects that have a remote repo
+  URL, with the repo URL + description joined. `--assignee` narrows to one user
+  (a fleet of pollers pins distinct assignees). Requires `PM_TOKEN`. This is the
+  source of work for the cc-bridge poll routine; claim a ticket by moving it
+  `todo → doing`.
+
 ## Key rules you must respect
 
 - **State machine is per project.** Default statuses:

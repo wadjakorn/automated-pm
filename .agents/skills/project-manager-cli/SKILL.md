@@ -130,6 +130,7 @@ pm task link list --id <id>
 pm task link rm   --id <id> --link <linkId>
 
 pm board        --project <id|name>                      # columns view: tasks grouped by status
+pm ready        [--project <id|name>] [--assignee <id|username>]   # ready tickets (+repo, +desc) for the poll routine; needs PM_TOKEN
 
 # changing --name or --remote-url is a GUARDED edit: it needs --confirm (else
 # bad_request). --description is not guarded. --remote-url '' clears the URL.

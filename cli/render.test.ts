@@ -94,3 +94,23 @@ describe("render board", () => {
     expect(out).toContain("(empty)");
   });
 });
+
+describe("render ready", () => {
+  const pretty = { mode: "pretty" as const, color: false };
+  it("ready → table with ticket + repo columns", () => {
+    const out = render(
+      "ready",
+      [{ ticket: "t1", project: "p1", projectName: "demo", repo: "git@github.com:me/r.git", title: "Do X", priority: "high" }],
+      pretty
+    );
+    expect(out).toContain("TICKET");
+    expect(out).toContain("t1");
+    expect(out).toContain("demo");
+    expect(out).toContain("git@github.com:me/r.git");
+    expect(out).toContain("Do X");
+  });
+
+  it("empty ready → placeholder", () => {
+    expect(render("ready", [], pretty)).toBe("(no ready tickets)");
+  });
+});

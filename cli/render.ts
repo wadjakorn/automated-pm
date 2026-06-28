@@ -2,7 +2,7 @@ import type { Mode } from "./mode";
 
 export type Kind =
   | "projects" | "project" | "statemachine"
-  | "tasks" | "task" | "board" | "ok" | "raw";
+  | "tasks" | "task" | "board" | "ready" | "ok" | "raw";
 
 export interface RenderOpts {
   mode: Mode;
@@ -77,6 +77,14 @@ function renderStateMachine(sm: any): string {
   return `${statuses}\n\nTransitions:\n${edges}`;
 }
 
+function renderReady(list: any[]): string {
+  if (!list.length) return "(no ready tickets)";
+  return table(
+    ["TICKET", "PROJECT", "PRIO", "REPO", "TITLE"],
+    list.map((r) => [r.ticket, r.projectName ?? r.project, r.priority ?? "", r.repo ?? "", r.title ?? ""])
+  );
+}
+
 function renderBoard(b: any, o: RenderOpts): string {
   return (b.columns ?? [])
     .map((col: any) => {
@@ -98,6 +106,7 @@ export function render(kind: Kind, data: any, o: RenderOpts): string {
     case "tasks": return renderTasks(data);
     case "task": return renderTask(data, o);
     case "board": return renderBoard(data, o);
+    case "ready": return renderReady(data);
     case "ok": return `${paint("✓", ANSI.green, o.color)} done`;
     default: return json(data);
   }

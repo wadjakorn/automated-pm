@@ -52,6 +52,18 @@ export interface Task {
   assignee_username: string | null;
 }
 
+// A ready-to-work ticket as served by GET /api/cc-bridge/ready: the minimal
+// fields the poll routine needs, with the project's repo URL joined in.
+export interface ReadyTicket {
+  ticket: string;        // task id
+  project: string;       // project id
+  projectName: string;
+  repo: string;          // projects.remote_repo_url (non-null by query filter)
+  title: string;
+  priority: Priority;
+  description: string | null;
+}
+
 // A user account. password_hash and api_token are secrets — never serialize
 // them to clients. PublicUser is the safe shape returned by the API.
 export interface User {
