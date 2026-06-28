@@ -81,7 +81,7 @@ function renderReady(list: any[]): string {
   if (!list.length) return "(no ready tickets)";
   return table(
     ["TICKET", "PROJECT", "PRIO", "REPO", "TITLE"],
-    list.map((r) => [r.ticket, r.projectName ?? r.project, r.priority ?? "", r.repo ?? "", r.title])
+    list.map((r) => [r.ticket, r.projectName ?? r.project, r.priority ?? "", r.repo ?? "", r.title ?? ""])
   );
 }
 

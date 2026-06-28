@@ -5,7 +5,7 @@ import { listReadyTickets } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/cc-bridge/ready[?project=<id|name>]
+// GET /api/cc-bridge/ready[?project=<id|name>][&assignee=<id|username>]
 // The poll routine's source of work: ready tickets across opted-in (repo-
 // bearing) projects, repo URL joined. STRICTER than the open board — it gates
 // autonomous code execution, so it requires a valid PM_TOKEN (or session).
