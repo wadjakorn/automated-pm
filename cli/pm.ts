@@ -141,6 +141,7 @@ const HELP = `pm — Project Manager CLI
   pm task link rm   --id <id> --link <linkId>
 
   pm board --project <id|name>          # columns view: tasks grouped by status
+  pm ready [--project <id|name>] [--assignee <id|username>]   # ready tickets (repo + desc) for the poll routine
 `;
 
 const VERSION = (() => {
@@ -185,7 +186,7 @@ async function main() {
   }
 
   // Single-word commands: flags live in [rawAction, ...rest].
-  if (group === "login" || group === "whoami" || group === "board") {
+  if (group === "login" || group === "whoami" || group === "board" || group === "ready") {
     const sf = parseFlags([rawAction, ...rest].filter((x): x is string => !!x));
     if (group === "whoami") return emit("raw", await api("GET", "/api/auth/me"));
     if (group === "login")
@@ -196,6 +197,13 @@ async function main() {
           password: need(sf, "password"),
         })
       );
+    if (group === "ready") {
+      const qs = new URLSearchParams();
+      if (typeof sf.project === "string") qs.set("project", sf.project);
+      if (typeof sf.assignee === "string") qs.set("assignee", sf.assignee);
+      const q = qs.toString() ? `?${qs.toString()}` : "";
+      return emit("ready", await api("GET", `/api/cc-bridge/ready${q}`));
+    }
     // board — Task 7 fills this in.
     return board(sf);
   }
