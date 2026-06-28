@@ -31,7 +31,7 @@
 - Consumes: existing `getProject(ref)`, `PRIORITY_ORDER_SQL`, `getDb()` in `lib/repo.ts`.
 - Produces:
   - `interface ReadyTicket { ticket: string; project: string; projectName: string; repo: string; title: string; priority: Priority; description: string | null; }`
-  - `function listReadyTickets(opts?: { projectRef?: string; status?: string }): ReadyTicket[]` — `status` defaults to `"todo"`; `projectRef` (id or name) narrows to one project, and an unknown ref returns `[]`.
+  - `function listReadyTickets(opts?: { projectRef?: string; assignee?: string; status?: string }): ReadyTicket[]` — `status` defaults to `"todo"`; `projectRef` (id or name) narrows to one project; `assignee` (id or username) narrows to one user; an unknown project OR assignee ref returns `[]`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -104,6 +104,24 @@ describe("listReadyTickets", () => {
     // custom status returns nothing here (no task in 'doing-ready')
     expect(repo.listReadyTickets({ status: "doing-ready" })).toEqual([]);
   });
+
+  it("narrows by assignee (id or username); unknown ref → []", () => {
+    const u = repo.createUser("claude-a", "pw");
+    const p = repo.createProject("ready-proj-d");
+    repo.updateProject(p.id, { remote_repo_url: "git@github.com:me/d.git", confirm: true });
+    const mine = repo.createTask(p.id, { title: "mine", assignee: "claude-a" });
+    repo.moveTask(mine.id, "todo");
+    const unassigned = repo.createTask(p.id, { title: "nobody" });
+    repo.moveTask(unassigned.id, "todo");
+
+    const byUser = repo.listReadyTickets({ assignee: "claude-a" }).map((r) => r.ticket);
+    expect(byUser).toContain(mine.id);
+    expect(byUser).not.toContain(unassigned.id);
+    // by id resolves too
+    expect(repo.listReadyTickets({ assignee: u.id }).map((r) => r.ticket)).toContain(mine.id);
+    // unknown assignee → empty, not a throw
+    expect(repo.listReadyTickets({ assignee: "ghost-user" })).toEqual([]);
+  });
 });
 ```
 
@@ -140,10 +158,12 @@ In `lib/repo.ts`, add the import of the type to the existing `./types` import, t
 // cc-bridge poll: the ready-work queue. One row per ticket in the ready status
 // that belongs to an opted-in project (one with a remote_repo_url), with that
 // URL joined so the poll routine knows which repo to work in. Cross-project by
-// default; `projectRef` (id or name) narrows to one. An unknown ref yields [].
+// default; `projectRef` (id or name) narrows to one project, `assignee` (id or
+// username) to one user — an unknown project OR assignee ref yields []. A fleet
+// of pollers pins distinct assignees to split work with no overlap.
 // `status` defaults to "todo" (the route passes CC_BRIDGE_READY_STATUS).
 export function listReadyTickets(
-  opts: { projectRef?: string; status?: string } = {}
+  opts: { projectRef?: string; assignee?: string; status?: string } = {}
 ): ReadyTicket[] {
   const status = opts.status ?? "todo";
   let pid: string | null = null;
@@ -152,6 +172,14 @@ export function listReadyTickets(
       pid = getProject(opts.projectRef).id;
     } catch {
       return []; // unknown project → no ready work, not an error
+    }
+  }
+  let aid: string | null = null;
+  if (opts.assignee) {
+    try {
+      aid = resolveUserId(opts.assignee);
+    } catch {
+      return []; // unknown assignee → no ready work, not an error
     }
   }
   return getDb()
@@ -167,13 +195,14 @@ export function listReadyTickets(
           AND t.archived_at IS NULL
           AND t.status_key = ?
           AND (? IS NULL OR p.id = ?)
+          AND (? IS NULL OR t.assignee_id = ?)
         ORDER BY ${PRIORITY_ORDER_SQL}, t.rank`
     )
-    .all(status, pid, pid) as ReadyTicket[];
+    .all(status, pid, pid, aid, aid) as ReadyTicket[];
 }
 ```
 
-Add `ReadyTicket` to the `./types` import line near the top of `lib/repo.ts` (it currently imports `Project, Task, ...` — append `ReadyTicket`).
+Add `ReadyTicket` to the `./types` import line near the top of `lib/repo.ts` (it currently imports `Project, Task, ...` — append `ReadyTicket`). `resolveUserId` is already defined in `lib/repo.ts` (used by `listTasks`).
 
 - [ ] **Step 5: Run the test to verify it passes**
 
@@ -259,6 +288,12 @@ describe("GET /api/cc-bridge/ready", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([]);
   });
+
+  it("filters by ?assignee= (unknown user → [])", async () => {
+    const res = await get({ authorization: `Bearer ${token}` }, "?assignee=ghost-user");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
 });
 ```
 
@@ -291,9 +326,10 @@ export function GET(req: NextRequest) {
     );
   }
   return handle(() => {
-    const projectRef = new URL(req.url).searchParams.get("project") ?? undefined;
+    const sp = new URL(req.url).searchParams;
     return listReadyTickets({
-      projectRef,
+      projectRef: sp.get("project") ?? undefined,
+      assignee: sp.get("assignee") ?? undefined,
       status: process.env.CC_BRIDGE_READY_STATUS || "todo",
     });
   });
@@ -409,10 +445,10 @@ In `cli/pm.ts`, extend the single-word command branch (currently `if (group === 
         })
       );
     if (group === "ready") {
-      const q =
-        typeof sf.project === "string"
-          ? `?project=${encodeURIComponent(sf.project)}`
-          : "";
+      const qs = new URLSearchParams();
+      if (typeof sf.project === "string") qs.set("project", sf.project);
+      if (typeof sf.assignee === "string") qs.set("assignee", sf.assignee);
+      const q = qs.toString() ? `?${qs.toString()}` : "";
       return emit("ready", await api("GET", `/api/cc-bridge/ready${q}`));
     }
     // board — Task 7 fills this in.
@@ -425,7 +461,7 @@ In `cli/pm.ts`, extend the single-word command branch (currently `if (group === 
 In the `HELP` template in `cli/pm.ts`, add after the `pm board` line:
 
 ```
-  pm ready [--project <id|name>]        # ready tickets (repo + desc) for the poll routine
+  pm ready [--project <id|name>] [--assignee <id|username>]   # ready tickets (repo + desc) for the poll routine
 ```
 
 - [ ] **Step 7: Verify the full CLI test suite + types**
@@ -594,7 +630,9 @@ is the lock.
    > and append a STATUS note to the ticket describing why. Never set
    > `ANTHROPIC_API_KEY`. Keep secrets out of the repo.
 
-   Omit `--project` to work every opted-in project at once.
+   Omit `--project` to work every opted-in project at once. Running a **fleet**
+   of machines? Give each one a distinct bot user and pin `--assignee <bot>` in
+   its prompt — they split the ready tickets with no overlap.
 
 ## Notes & limits
 
@@ -622,10 +660,12 @@ Replace the existing cc-bridge bullet (the `lib/webhook.ts, app/api/cc-bridge/**
 In `AGENTS.md`, in the task/command reference section, add:
 
 ```markdown
-- `pm ready [--project <id|name>]` — list ready-to-work tickets (status `todo`)
-  across projects that have a remote repo URL, with the repo URL + description
-  joined. Requires `PM_TOKEN`. This is the source of work for the cc-bridge poll
-  routine; claim a ticket by moving it `todo → doing`.
+- `pm ready [--project <id|name>] [--assignee <id|username>]` — list
+  ready-to-work tickets (status `todo`) across projects that have a remote repo
+  URL, with the repo URL + description joined. `--assignee` narrows to one user
+  (a fleet of pollers pins distinct assignees). Requires `PM_TOKEN`. This is the
+  source of work for the cc-bridge poll routine; claim a ticket by moving it
+  `todo → doing`.
 ```
 
 - [ ] **Step 4: Add `pm ready` to the in-repo skill**
@@ -633,7 +673,7 @@ In `AGENTS.md`, in the task/command reference section, add:
 In `.agents/skills/project-manager-cli/SKILL.md`, in the §2 command reference (near the `pm board` line), add:
 
 ```markdown
-pm ready        [--project <id|name>]                    # ready tickets (+repo, +desc) for the poll routine; needs PM_TOKEN
+pm ready        [--project <id|name>] [--assignee <id|username>]   # ready tickets (+repo, +desc) for the poll routine; needs PM_TOKEN
 ```
 
 - [ ] **Step 5: Commit**

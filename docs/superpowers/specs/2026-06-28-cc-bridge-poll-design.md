@@ -52,10 +52,14 @@ endpoint exists to *back* `pm ready`; the agent never touches raw HTTP.
 ### 1. Server endpoint — `GET /api/cc-bridge/ready`
 
 New route `app/api/cc-bridge/ready/route.ts`. Returns the actionable work
-queue as compact JSON. Optional `?project=<id|name>` filter — **omit = all
-bridge-enabled projects** (cross-project); **pass = that one project**, resolved
-by id OR name (names are unique among live projects, so the routine pins a
-memorable name like `automated-pm`, never the ugly id):
+queue as compact JSON. Two optional filters, both omittable:
+- `?project=<id|name>` — **omit = all bridge-enabled projects** (cross-project);
+  **pass = that one project**, resolved by id OR name (names are unique among
+  live projects, so the routine pins a memorable name like `automated-pm`).
+- `?assignee=<id|username>` — **omit = any assignee** (unchanged); **pass =
+  only tickets assigned to that user**. Lets a fleet of pollers split work
+  (machine A pins `--assignee claude-a`, B pins `claude-b`), or restricts the
+  routine to tickets explicitly handed to the bot. Mirrors `pm task list`.
 
 ```json
 [
@@ -92,18 +96,20 @@ to mint the token, sets `PM_TOKEN` in the routine env.
 
 ### 2. CLI — `pm ready`
 
-New command `pm ready [--project <id|name>] [--json]`, wrapping
-`GET /api/cc-bridge/ready` (sends `PM_TOKEN` like every other `pm` call). This
-is what the routine calls — keeping the agent on the one CLI the skill +
-AGENTS.md document, never raw HTTP. `--project` omitted = all bridge projects;
-passed = that one (by name, the pinned handle). Output is JSON when piped
-(TTY-aware, like the rest of `pm`). Add a short entry to AGENTS.md + the
-project-manager-cli skill so an agent knows the command exists.
+New command `pm ready [--project <id|name>] [--assignee <id|username>] [--json]`,
+wrapping `GET /api/cc-bridge/ready` (sends `PM_TOKEN` like every other `pm`
+call). This is what the routine calls — keeping the agent on the one CLI the
+skill + AGENTS.md document, never raw HTTP. Both filters omittable (= all bridge
+projects, any assignee). Output is JSON when piped (TTY-aware, like the rest of
+`pm`). Add a short entry to AGENTS.md + the project-manager-cli skill so an
+agent knows the command exists.
 
 ### 3. Repo function — `listReadyTickets()`
 
 New function in `lib/repo.ts`, single SQL join. Optional `projectRef` narrows
-to one project (resolved via the existing id-or-name `getProject`):
+to one project (resolved via id-or-name `getProject`); optional `assignee`
+narrows to one user (resolved via the existing `resolveUserId`). An unknown
+project or assignee ref yields `[]` (not an error):
 
 ```sql
 SELECT t.*, p.name AS project_name, p.remote_repo_url
@@ -113,8 +119,9 @@ WHERE p.deleted_at IS NULL
   AND p.remote_repo_url IS NOT NULL
   AND t.deleted_at IS NULL
   AND t.archived_at IS NULL
-  AND t.status_key = ?          -- ready status
-  AND (? IS NULL OR p.id = ?)   -- optional single-project filter
+  AND t.status_key = ?            -- ready status
+  AND (? IS NULL OR p.id = ?)     -- optional single-project filter
+  AND (? IS NULL OR t.assignee_id = ?)  -- optional assignee filter
 ORDER BY <PRIORITY_ORDER_SQL>, t.rank
 ```
 
@@ -133,6 +140,8 @@ claimed ticket leaves `todo`, so it is absent from the next `/ready` poll.
 `cc-bridge/README.md` is rewritten to describe a single Claude Code built-in
 scheduled routine. No script, no service, no plist. The doc gives:
 
+- a fleet of machines can each pin `--assignee <bot-user>` so they split work
+  with no overlap; a single machine omits it.
 - the routine prompt: run `pm ready --project <name> --json` → for each ticket:
   `pm task move --status doing` (claim) → implement → run tests → open PR →
   `pm task move` to Code Review → on block, move to `blocked` and note why,
@@ -204,11 +213,11 @@ no production DB already has it; if so add a defensive `DROP TABLE IF EXISTS`.
 - `lib/repo.ts`: unit test `listReadyTickets()` — only returns ready-status
   tickets in repo-bearing, non-deleted projects; excludes archived/deleted;
   honors a custom `CC_BRIDGE_READY_STATUS`; optional `projectRef` narrows to one
-  project (and returns `[]` for a project without a repo URL); priority+rank
-  ordering.
+  project (and returns `[]` for a project without a repo URL); optional
+  `assignee` narrows to one user (unknown ref → `[]`); priority+rank ordering.
 - `app/api/cc-bridge/ready`: route test — `401` with no/invalid token; `200` +
-  correct shape with a valid `PM_TOKEN`; `?project=` filter narrows correctly.
-- `pm ready` CLI: returns JSON when piped; honors `--project`.
+  correct shape with a valid `PM_TOKEN`; `?project=` and `?assignee=` narrow.
+- `pm ready` CLI: returns JSON when piped; honors `--project` and `--assignee`.
 - Delete the two webhook test files.
 - Full suite green after deletions (no dangling imports of removed modules).
 
