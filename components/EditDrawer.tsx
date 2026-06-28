@@ -175,10 +175,10 @@ export function EditDrawer({
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={requestClose}>
       <div
-        className="flex h-full w-full max-w-full flex-col gap-4 overflow-y-auto border-l border-border bg-bg-soft p-5 sm:w-[60%] sm:min-w-[560px]"
+        className="flex h-full w-full max-w-full flex-col border-l border-border bg-bg-soft sm:w-[60%] sm:min-w-[560px]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between px-5 pt-5 pb-4">
           <h2 className="font-semibold text-fg">Edit task</h2>
           <div className="flex items-center gap-3">
             <button
@@ -201,6 +201,7 @@ export function EditDrawer({
           </div>
         </div>
 
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
         <label className="text-xs text-fg-muted">Title</label>
         <input
           value={title}
@@ -322,26 +323,29 @@ export function EditDrawer({
         </div>
 
         <LinksSection task={task} onOpenTask={onOpenTask} />
-
-        <div className="mt-auto flex items-center justify-between">
-          <button
-            disabled={busy}
-            onClick={del}
-            className="rounded border border-red-800 px-3 py-2 text-sm text-red-300 hover:bg-red-950"
-          >
-            Delete
-          </button>
-          <button
-            disabled={busy}
-            onClick={save}
-            className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
-          >
-            Save
-          </button>
         </div>
-        <div className="text-[10px] text-fg-subtle">
-          id {task.id} · v{task.version}
-          {task.creator_username && <> · created by {task.creator_username}</>}
+
+        <div className="shrink-0 border-t border-border px-5 py-4">
+          <div className="flex items-center justify-between">
+            <button
+              disabled={busy}
+              onClick={del}
+              className="rounded border border-red-800 px-3 py-2 text-sm text-red-300 hover:bg-red-950"
+            >
+              Delete
+            </button>
+            <button
+              disabled={busy}
+              onClick={save}
+              className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
+            >
+              Save
+            </button>
+          </div>
+          <div className="mt-2 text-[10px] text-fg-subtle">
+            id {task.id} · v{task.version}
+            {task.creator_username && <> · created by {task.creator_username}</>}
+          </div>
         </div>
       </div>
     </div>
