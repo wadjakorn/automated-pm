@@ -103,27 +103,6 @@ function migrate(db: Database.Database) {
       UNIQUE(source_id, target_id, type)
     );
 
-    -- cc-bridge outbound webhook queue. One row per (ticket, action) delivery
-    -- to the dev-machine listener. Durable so a ticket moved to Ready while the
-    -- machine is asleep/offline is retried (with backoff) until it returns 202,
-    -- and never fires twice (idem_key UNIQUE). See lib/webhook.ts + cc-bridge/.
-    CREATE TABLE IF NOT EXISTS webhook_deliveries (
-      id              TEXT PRIMARY KEY,
-      idem_key        TEXT NOT NULL UNIQUE,
-      ticket_id       TEXT NOT NULL,
-      project         TEXT NOT NULL,
-      action          TEXT NOT NULL,       -- 'new' | 'resume'
-      order_text      TEXT,                -- resume payload (PR comment / CI summary)
-      state           TEXT NOT NULL,       -- 'pending' | 'delivered' | 'dead'
-      attempts        INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT NOT NULL,       -- ISO; due when <= now
-      last_error      TEXT,
-      created_at      TEXT NOT NULL,
-      updated_at      TEXT NOT NULL,
-      delivered_at    TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_webhook_due ON webhook_deliveries(state, next_attempt_at);
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_source ON task_links(source_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_target ON task_links(target_id);
