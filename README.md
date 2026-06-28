@@ -168,9 +168,10 @@ elsewhere.
 - `lib/uploads.ts`, `app/api/uploads/**` — image upload storage (disk) + serving for description images.
 - `lib/markdown.ts` — tiny XSS-safe Markdown renderer for task descriptions.
 - `components/**`, `app/**` — dark Kanban UI (board, settings, trash).
-- `lib/webhook.ts`, `app/api/cc-bridge/**` — **cc-bridge**: moving a ticket to
-  Ready auto-starts headless Claude Code on a dev machine. Opt-in via
-  `CC_BRIDGE_URL`. Setup (cross-device + same-device) in [`cc-bridge/README.md`](cc-bridge/README.md).
+- `app/api/cc-bridge/ready`, `pm ready` — **cc-bridge (poll model)**: a Claude
+  Code routine on your dev machine polls `pm ready` for tickets in Ready and
+  works them (claim → implement → PR → Code Review). Opt a project in by setting
+  its remote repo URL. Setup in [`cc-bridge/README.md`](cc-bridge/README.md).
 
 ## Test
 
