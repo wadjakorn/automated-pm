@@ -175,7 +175,7 @@ export function EditDrawer({
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={requestClose}>
       <div
-        className="flex h-full w-[60%] min-w-[560px] max-w-full flex-col gap-4 overflow-y-auto border-l border-border bg-bg-soft p-5"
+        className="flex h-full w-full max-w-full flex-col gap-4 overflow-y-auto border-l border-border bg-bg-soft p-5 sm:w-[60%] sm:min-w-[560px]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
