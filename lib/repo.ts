@@ -20,6 +20,7 @@ import type {
   User,
   PublicUser,
   LinkedTicket,
+  ReadyTicket,
 } from "./types";
 
 // Validate an optional priority input; returns the canonical value or throws.
@@ -376,6 +377,52 @@ export function listTasks(
       `${TASK_SELECT} WHERE ${clauses.join(" AND ")} ORDER BY t.status_key, ${PRIORITY_ORDER_SQL}, t.rank`
     )
     .all(...params) as Task[];
+}
+
+// cc-bridge poll: the ready-work queue. One row per ticket in the ready status
+// that belongs to an opted-in project (one with a remote_repo_url), with that
+// URL joined so the poll routine knows which repo to work in. Cross-project by
+// default; `projectRef` (id or name) narrows to one project, `assignee` (id or
+// username) to one user — an unknown project OR assignee ref yields []. A fleet
+// of pollers pins distinct assignees to split work with no overlap.
+// `status` defaults to "todo" (the route passes CC_BRIDGE_READY_STATUS).
+export function listReadyTickets(
+  opts: { projectRef?: string; assignee?: string; status?: string } = {}
+): ReadyTicket[] {
+  const status = opts.status ?? "todo";
+  let pid: string | null = null;
+  if (opts.projectRef) {
+    try {
+      pid = getProject(opts.projectRef).id;
+    } catch {
+      return []; // unknown project → no ready work, not an error
+    }
+  }
+  let aid: string | null = null;
+  if (opts.assignee) {
+    try {
+      aid = resolveUserId(opts.assignee);
+    } catch {
+      return []; // unknown assignee → no ready work, not an error
+    }
+  }
+  return getDb()
+    .prepare(
+      `SELECT t.id AS ticket, t.project_id AS project, p.name AS projectName,
+              p.remote_repo_url AS repo, t.title AS title,
+              t.priority AS priority, t.description AS description
+         FROM tasks t
+         JOIN projects p ON p.id = t.project_id
+        WHERE p.deleted_at IS NULL
+          AND p.remote_repo_url IS NOT NULL
+          AND t.deleted_at IS NULL
+          AND t.archived_at IS NULL
+          AND t.status_key = ?
+          AND (? IS NULL OR p.id = ?)
+          AND (? IS NULL OR t.assignee_id = ?)
+        ORDER BY ${PRIORITY_ORDER_SQL}, t.rank`
+    )
+    .all(status, pid, pid, aid, aid) as ReadyTicket[];
 }
 
 export function getTask(taskId: string, includeDeleted = false): Task {
