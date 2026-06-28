@@ -127,6 +127,17 @@ user. Creator is set from `PM_TOKEN` (the authenticated caller), not a flag.
   `deleted_at` (archived tickets are not in Trash). Reverse with
   `pm task unarchive`; `pm task archive-final --project <p> --status <final-key>`
   archives a whole final column at once.
+- **Always set an assignee.** Every task you create or pick up should name an
+  owner — pass `--assignee <id|username>` on `pm task create`, or `pm task update
+  --id <id> --assignee <id|username>` for an existing one. Default to the acting
+  user (`pm whoami` when `PM_TOKEN` is set); if there's no user context, ask who
+  owns it rather than leaving it `null`. The assignee must be an existing user
+  (else `not_found`). Use `--unassign` only when deliberately clearing ownership.
+- **Always set a priority.** Tickets carry a fixed scale `low | medium | high |
+  now` (default `medium`). Pass `--priority <p>` on create/update to reflect real
+  urgency instead of relying on the default; an unknown value returns
+  `bad_request`. `pm task list` auto-sorts each column `now → high → medium → low`
+  then by rank. Filter with `--priority <p>`.
 
 ## Typical workflow
 
@@ -138,8 +149,8 @@ PID=$(pm project create --name "Sprint 12" | sed -n 's/.*"id": "\(.*\)".*/\1/p' 
 # 2. Inspect the state machine before moving anything
 pm status list --project "$PID"
 
-# 3. Create a task (defaults to first status, usually backlog)
-TID=$(pm task create --project "$PID" --title "Write API tests" | sed -n 's/.*"id": "\(.*\)".*/\1/p' | head -1)
+# 3. Create a task — always name an owner and a priority (defaults to first status)
+TID=$(pm task create --project "$PID" --title "Write API tests" --assignee alice --priority high | sed -n 's/.*"id": "\(.*\)".*/\1/p' | head -1)
 
 # 4. Move it forward, one legal step at a time
 pm task move --id "$TID" --status todo

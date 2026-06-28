@@ -184,11 +184,19 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
   <id|username>` must name an existing user (else `not_found`); `--unassign`
   clears it. There are no roles — auth never grants or denies access, it only
   records who created/owns a task. User deletion is not implemented yet.
-- **Priority is a fixed scale.** `low | medium | high | now`, default `medium`
-  (not per-project, unlike statuses). An unknown value returns `bad_request`.
-  `pm task list` auto-sorts each status column by priority (`now → high →
-  medium → low`), then by rank — so the most urgent ticket per column is always
-  on top. Filter with `--priority <p>`; set with `--priority` on create/update.
+- **Always set an assignee.** Every task you create or pick up should name an
+  owner — pass `--assignee <id|username>` on `pm task create`, or `pm task
+  update --id <id> --assignee <id|username>` for an existing one. Default to the
+  acting user (`pm whoami` when `PM_TOKEN` is set); if there's no user context,
+  ask who owns it rather than leaving it `null`. The assignee must be a real
+  user (else `not_found`) — create one with `pm user create` if the board has
+  none. Use `--unassign` only when deliberately clearing ownership.
+- **Always set a priority.** Tickets carry a fixed scale `low | medium | high |
+  now` (default `medium`, not per-project unlike statuses). Set `--priority <p>`
+  on create/update to reflect real urgency instead of relying on the default; an
+  unknown value returns `bad_request`. `pm task list` auto-sorts each status
+  column by priority (`now → high → medium → low`), then by rank — so the most
+  urgent ticket per column is always on top. Filter with `--priority <p>`.
 
 ## 4. Typical workflow
 
@@ -202,8 +210,10 @@ PID=$(pm project create --name "Sprint 12" | jq -r .id)
 # 2. Inspect the state machine BEFORE moving anything
 pm status list --project "$PID"
 
-# 3. Create a task (defaults to first status, usually backlog)
-TID=$(pm task create --project "$PID" --title "Write API tests" | jq -r .id)
+# 3. Create a task — always name an owner and a priority (defaults to first
+#    status, usually backlog)
+TID=$(pm task create --project "$PID" --title "Write API tests" \
+  --assignee alice --priority high | jq -r .id)
 
 # 4. Move it forward, one legal step at a time
 pm task move --id "$TID" --status todo
