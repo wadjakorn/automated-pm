@@ -9,6 +9,7 @@ import { shareLink, LINK_OPTIONS, type LinkOption } from "@/lib/ticket-link";
 import { copyText } from "@/lib/clipboard";
 import { compressImage, exceedsHardMax } from "@/lib/image-compress";
 import { Markdown } from "./Markdown";
+import { Spinner } from "./ui";
 import { toast } from "./Toast";
 
 // Slide-over drawer to edit a task: title, description, assignee, status move,
@@ -43,6 +44,10 @@ export function EditDrawer({
   const uploadingRef = useRef(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Accessible discard prompt replaces window.confirm() so it's keyboard- and
+  // screen-reader-friendly and themed.
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   useEffect(() => {
     setTitle(task.title);
@@ -59,11 +64,46 @@ export function EditDrawer({
     assignee !== (task.assignee_id ?? "") ||
     priority !== task.priority;
 
-  // Confirm before discarding unsaved edits. A clean drawer closes instantly.
+  // Confirm before discarding unsaved edits. A clean drawer closes instantly;
+  // a dirty one raises an in-drawer accessible confirm dialog.
   const requestClose = useCallback(() => {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
     onClose();
   }, [dirty, onClose]);
+
+  // Esc closes the drawer (routes through the dirty guard). Focus the panel on
+  // mount so keyboard users land inside it, and trap Tab within the drawer.
+  useEffect(() => {
+    panelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (confirmDiscard) setConfirmDiscard(false);
+        else requestClose();
+        return;
+      }
+      if (e.key !== "Tab" || !panelRef.current) return;
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+        'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && activeEl === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && activeEl === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [requestClose, confirmDiscard]);
 
   // Insert text at the textarea caret (or append), keeping React state in sync.
   function insertAtCaret(snippet: string) {
@@ -173,13 +213,23 @@ export function EditDrawer({
     });
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={requestClose}>
+    <div
+      className="fixed inset-0 z-40 flex animate-fade-in justify-end bg-black/50"
+      onClick={requestClose}
+    >
       <div
-        className="flex h-full w-full max-w-full flex-col border-l border-border bg-bg-soft sm:w-[60%] sm:min-w-[560px]"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drawer-title"
+        tabIndex={-1}
+        className="relative flex h-full w-full max-w-full animate-drawer-in flex-col border-l border-border bg-bg-soft outline-none sm:w-[60%] sm:min-w-[560px]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between px-5 pt-5 pb-4">
-          <h2 className="font-semibold text-fg">Edit task</h2>
+          <h2 id="drawer-title" className="font-semibold text-fg">
+            Edit task
+          </h2>
           <div className="flex items-center gap-3">
             <button
               onClick={async () => {
@@ -195,23 +245,32 @@ export function EditDrawer({
             >
               🔗 Copy link
             </button>
-            <button onClick={requestClose} className="text-fg-muted hover:text-fg">
+            <button
+              onClick={requestClose}
+              aria-label="Close"
+              className="rounded px-1 text-fg-muted hover:text-fg"
+            >
               ✕
             </button>
           </div>
         </div>
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
-        <label className="text-xs text-fg-muted">Title</label>
+        <label htmlFor="task-title" className="text-xs text-fg-muted">
+          Title
+        </label>
         <input
+          id="task-title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+          className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none focus:border-accent"
         />
 
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs text-fg-muted">Description</label>
+            <label htmlFor="task-desc" className="text-xs text-fg-muted">
+              Description
+            </label>
             <div className="flex items-center gap-3 text-xs">
               <button
                 type="button"
@@ -253,12 +312,13 @@ export function EditDrawer({
           />
           {descTab === "edit" ? (
             <textarea
+              id="task-desc"
               ref={taRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onPaste={onPaste}
               placeholder="Markdown supported. Paste or attach an image…"
-              className="min-h-[280px] resize-y rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+              className="min-h-[280px] resize-y rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none focus:border-accent"
             />
           ) : (
             <div className="min-h-[280px] overflow-auto rounded border border-border bg-bg-card px-4 py-3">
@@ -271,11 +331,14 @@ export function EditDrawer({
           )}
         </div>
 
-        <label className="text-xs text-fg-muted">Assignee</label>
+        <label htmlFor="task-assignee" className="text-xs text-fg-muted">
+          Assignee
+        </label>
         <select
+          id="task-assignee"
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
-          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none"
+          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none focus:border-accent"
         >
           <option value="">Unassigned</option>
           {users.map((u) => (
@@ -285,11 +348,14 @@ export function EditDrawer({
           ))}
         </select>
 
-        <label className="text-xs text-fg-muted">Priority</label>
+        <label htmlFor="task-priority" className="text-xs text-fg-muted">
+          Priority
+        </label>
         <select
+          id="task-priority"
           value={priority}
           onChange={(e) => setPriority(e.target.value as typeof priority)}
-          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none"
+          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none focus:border-accent"
         >
           {PRIORITIES.map((p) => (
             <option key={p} value={p}>
@@ -330,15 +396,17 @@ export function EditDrawer({
             <button
               disabled={busy}
               onClick={del}
-              className="rounded border border-red-800 px-3 py-2 text-sm text-red-300 hover:bg-red-950"
+              className="inline-flex items-center gap-2 rounded border border-danger-border px-3 py-2 text-sm text-danger hover:bg-danger-bg disabled:opacity-50"
             >
+              {busy && <Spinner className="h-3.5 w-3.5" />}
               Delete
             </button>
             <button
               disabled={busy}
               onClick={save}
-              className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
+              className="inline-flex items-center gap-2 rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
             >
+              {busy && <Spinner className="h-3.5 w-3.5" />}
               Save
             </button>
           </div>
@@ -347,6 +415,46 @@ export function EditDrawer({
             {task.creator_username && <> · created by {task.creator_username}</>}
           </div>
         </div>
+
+        {confirmDiscard && (
+          <div
+            className="absolute inset-0 z-10 flex animate-fade-in items-center justify-center bg-black/40 p-6"
+            onClick={() => setConfirmDiscard(false)}
+          >
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="discard-title"
+              className="w-full max-w-xs rounded-lg border border-border bg-bg-card p-5 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="discard-title" className="font-semibold text-fg">
+                Discard unsaved changes?
+              </h3>
+              <p className="mt-1 text-sm text-fg-muted">
+                Your edits to this ticket will be lost.
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  autoFocus
+                  onClick={() => setConfirmDiscard(false)}
+                  className="rounded border border-border px-3 py-1.5 text-sm text-fg hover:bg-bg-soft"
+                >
+                  Keep editing
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmDiscard(false);
+                    onClose();
+                  }}
+                  className="rounded bg-danger px-3 py-1.5 text-sm text-danger-fg hover:opacity-90"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -451,7 +559,7 @@ function LinksSection({
                   <button
                     disabled={busy}
                     onClick={() => remove(l.link_id)}
-                    className="text-fg-subtle hover:text-red-400"
+                    className="text-fg-subtle hover:text-danger"
                     title="Remove link"
                   >
                     ✕

@@ -11,10 +11,22 @@
   --border: #d0d7de;
   --fg: #1f2328;
   --fg-muted: #57606a;
-  --fg-subtle: #8c959f;
+  --fg-subtle: #6e7781; /* darkened from #8c959f to clear WCAG AA on --bg-soft */
   --accent: #0969da;
   --accent-hover: #0860ca;
   --scrollbar: #d0d7de;
+
+  /* Semantic status tokens — single source for priority/toast/destructive UI */
+  --danger: #cf222e;
+  --danger-fg: #ffffff;
+  --danger-bg: #fff0f0;
+  --danger-border: #ff9492;
+  --success: #1a7f37;
+  --success-bg: #eaffea;
+  --success-border: #4ac26b;
+  --warning: #9a6700;
+  --warning-bg: #fff8c5;
+  --warning-border: #d4a72c;
 }
 
 /* Dark */
@@ -26,10 +38,21 @@
   --border: #30363d;
   --fg: #e6edf3;
   --fg-muted: #9aa4af;
-  --fg-subtle: #6e7681;
+  --fg-subtle: #8b949e; /* lifted from #6e7681 for AA on --bg-soft */
   --accent: #2563eb;
   --accent-hover: #3b82f6;
   --scrollbar: #30363d;
+
+  --danger: #f85149;
+  --danger-fg: #ffffff;
+  --danger-bg: #2d1213;
+  --danger-border: #6e2329;
+  --success: #3fb950;
+  --success-bg: #122119;
+  --success-border: #2a5a35;
+  --warning: #d29922;
+  --warning-bg: #221c0f;
+  --warning-border: #5c441a;
 }
 
 html,
@@ -39,6 +62,32 @@ body {
 
 body {
   @apply bg-bg text-fg antialiased;
+}
+
+/* Consistent, accessible focus ring for keyboard users across all controls. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Mouse clicks shouldn't paint the ring; :focus-visible already handles keyboard. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Smooth interaction feedback — opt-in via .transition-* utilities in markup,
+   but give buttons/links/inputs a sensible default so hovers don't snap. */
+button,
+a,
+input,
+select,
+textarea {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease;
 }
 
 ::-webkit-scrollbar {
@@ -51,4 +100,16 @@ body {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Respect users who prefer reduced motion: kill non-essential animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

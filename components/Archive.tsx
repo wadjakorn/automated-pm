@@ -6,6 +6,7 @@ import type { Task } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
 import { useProjects } from "./useApp";
 import { Nav } from "./Nav";
+import { ListSkeleton } from "./ui";
 import { toast } from "./Toast";
 
 // Archived tickets: filed off the board but still live (openable by link,
@@ -13,10 +14,16 @@ import { toast } from "./Toast";
 export function Archive() {
   const { projects, selectedId, select, reload, loaded } = useProjects();
   const [archived, setArchived] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (pid: string) => {
-    const all = await api.listArchivedTasks(pid);
-    setArchived(all.filter((t) => t.archived_at && !t.deleted_at));
+    setLoading(true);
+    try {
+      const all = await api.listArchivedTasks(pid);
+      setArchived(all.filter((t) => t.archived_at && !t.deleted_at));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -41,12 +48,16 @@ export function Archive() {
         onSelect={select}
         onProjectsChanged={reload}
       />
-      <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-6">
+      <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4 sm:p-6">
         <h2 className="mb-4 text-lg font-semibold text-fg">Archive</h2>
         {!selectedId ? (
-          <div className="text-fg-subtle">
-            {loaded ? "Create a project first." : "Loading…"}
-          </div>
+          loaded ? (
+            <div className="text-fg-subtle">Create a project first.</div>
+          ) : (
+            <ListSkeleton />
+          )
+        ) : loading ? (
+          <ListSkeleton />
         ) : archived.length === 0 ? (
           <div className="text-fg-subtle">No archived tickets.</div>
         ) : (

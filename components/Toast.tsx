@@ -34,15 +34,21 @@ export function ToastHost() {
   }, []);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+    <div
+      className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-4"
+      role="region"
+      aria-label="Notifications"
+    >
       {items.map((t) => (
         <div
           key={t.id}
-          className={`rounded-md border px-4 py-2 text-sm shadow-lg ${
+          role={t.kind === "error" ? "alert" : "status"}
+          aria-live={t.kind === "error" ? "assertive" : "polite"}
+          className={`pointer-events-auto max-w-sm animate-toast-in rounded-md border px-4 py-2 text-sm shadow-lg ${
             t.kind === "error"
-              ? "border-red-700 bg-red-950 text-red-200"
+              ? "border-danger-border bg-danger-bg text-danger"
               : t.kind === "success"
-                ? "border-green-700 bg-green-950 text-green-200"
+                ? "border-success-border bg-success-bg text-success"
                 : "border-border bg-bg-card text-fg"
           }`}
         >

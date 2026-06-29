@@ -71,13 +71,14 @@ export function Nav({
   }
 
   return (
-    <header className="flex items-center gap-4 border-b border-border bg-bg-soft px-5 py-3">
+    <header className="flex flex-wrap items-center gap-2 border-b border-border bg-bg-soft px-3 py-2 sm:gap-4 sm:px-5 sm:py-3">
       <span className="font-semibold text-fg">📋 PM</span>
 
       <select
         value={selectedId ?? ""}
         onChange={(e) => onSelect(e.target.value)}
-        className="rounded border border-border bg-bg-card px-2 py-1.5 text-sm text-fg outline-none"
+        aria-label="Select project"
+        className="max-w-[40vw] rounded border border-border bg-bg-card px-2 py-1.5 text-sm text-fg outline-none focus:border-accent sm:max-w-none"
       >
         {projects.length === 0 && <option value="">No projects</option>}
         {projects.map((p) => (
@@ -119,7 +120,7 @@ export function Nav({
         </button>
       )}
 
-      <nav className="ml-auto flex items-center gap-1">
+      <nav className="ml-auto flex items-center gap-1 overflow-x-auto">
         {link("/", "Board")}
         {link("/settings", "Settings")}
         {link("/archive", "Archive")}
@@ -135,7 +136,9 @@ export function Nav({
         <span className="mx-1 h-5 w-px bg-border" />
         {user ? (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-fg-muted">👤 {user.username}</span>
+            <span className="hidden text-sm text-fg-muted sm:inline">
+              👤 {user.username}
+            </span>
             <button
               onClick={logout}
               className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
