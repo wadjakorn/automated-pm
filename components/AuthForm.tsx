@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiClientError } from "@/lib/client";
+import { Spinner } from "./ui";
 import { toast } from "./Toast";
 
 // Shared login/register form. On register, the one-time api_token is shown so
@@ -14,12 +15,17 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const isRegister = mode === "register";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!username.trim() || !password) return;
+    if (!username.trim() || !password) {
+      setError("Username and password are required.");
+      return;
+    }
+    setError(null);
     setBusy(true);
     try {
       if (isRegister) {
@@ -48,7 +54,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           Your API token (for the <code>pm</code> CLI). Copy it now — it is shown
           only once. Set <code>PM_TOKEN</code> to use it.
         </p>
-        <code className="break-all rounded border border-border bg-bg-card p-3 text-xs text-amber-300">
+        <code className="break-all rounded border border-warning-border bg-warning-bg p-3 text-xs text-warning">
           {token}
         </code>
         <button
@@ -70,29 +76,50 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         {isRegister ? "Create account" : "Log in"}
       </h1>
 
-      <label className="text-xs text-fg-muted">Username</label>
+      <label htmlFor="auth-username" className="text-xs text-fg-muted">
+        Username
+      </label>
       <input
+        id="auth-username"
         autoFocus
         value={username}
-        onChange={(e) => setUsername(e.target.value)}
+        onChange={(e) => {
+          setUsername(e.target.value);
+          if (error) setError(null);
+        }}
         autoComplete="username"
-        className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+        aria-invalid={!!error}
+        className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none focus:border-accent"
       />
 
-      <label className="text-xs text-fg-muted">Password</label>
+      <label htmlFor="auth-password" className="text-xs text-fg-muted">
+        Password
+      </label>
       <input
+        id="auth-password"
         type="password"
         value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        onChange={(e) => {
+          setPassword(e.target.value);
+          if (error) setError(null);
+        }}
         autoComplete={isRegister ? "new-password" : "current-password"}
-        className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none"
+        aria-invalid={!!error}
+        className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none focus:border-accent"
       />
+
+      {error && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
 
       <button
         type="submit"
         disabled={busy}
-        className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-2 rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
       >
+        {busy && <Spinner className="h-3.5 w-3.5" />}
         {isRegister ? "Register" : "Log in"}
       </button>
 

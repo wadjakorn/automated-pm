@@ -134,7 +134,7 @@ export function Settings() {
                     onClick={() =>
                       run(() => api.removeStatus(selectedId, s.key))
                     }
-                    className="rounded px-1.5 text-red-400 hover:text-red-300"
+                    className="rounded px-1.5 text-danger hover:opacity-80"
                   >
                     ✕
                   </button>

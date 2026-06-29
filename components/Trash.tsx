@@ -5,15 +5,22 @@ import type { Task } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
 import { useProjects } from "./useApp";
 import { Nav } from "./Nav";
+import { ListSkeleton } from "./ui";
 import { toast } from "./Toast";
 
 export function Trash() {
   const { projects, selectedId, select, reload, loaded } = useProjects();
   const [deleted, setDeleted] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async (pid: string) => {
-    const all = await api.listTasks(pid, true);
-    setDeleted(all.filter((t) => t.deleted_at));
+    setLoading(true);
+    try {
+      const all = await api.listTasks(pid, true);
+      setDeleted(all.filter((t) => t.deleted_at));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -38,12 +45,16 @@ export function Trash() {
         onSelect={select}
         onProjectsChanged={reload}
       />
-      <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-6">
+      <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4 sm:p-6">
         <h2 className="mb-4 text-lg font-semibold text-fg">Trash</h2>
         {!selectedId ? (
-          <div className="text-fg-subtle">
-            {loaded ? "Create a project first." : "Loading…"}
-          </div>
+          loaded ? (
+            <div className="text-fg-subtle">Create a project first.</div>
+          ) : (
+            <ListSkeleton />
+          )
+        ) : loading ? (
+          <ListSkeleton />
         ) : deleted.length === 0 ? (
           <div className="text-fg-subtle">No deleted tasks.</div>
         ) : (

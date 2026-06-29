@@ -7,9 +7,10 @@ import type { Priority } from "@/lib/priority";
 import { markdownToPlainText } from "@/lib/markdown";
 
 // Color per priority. now/high stand out; medium is the quiet default; low dims.
+// Uses semantic tokens so badges theme correctly in light + dark.
 const PRIORITY_STYLE: Record<Priority, string> = {
-  now: "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
-  high: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+  now: "bg-danger-bg text-danger ring-1 ring-danger-border",
+  high: "bg-warning-bg text-warning ring-1 ring-warning-border",
   medium: "bg-bg-soft text-fg-muted",
   low: "bg-bg-soft text-fg-subtle",
 };
@@ -46,8 +47,17 @@ export function TaskCard({
       style={style}
       {...listeners}
       {...attributes}
+      role="button"
+      tabIndex={overlay ? -1 : 0}
+      aria-label={`Open task: ${task.title}`}
       onClick={() => onOpen?.(task)}
-      className={`cursor-grab rounded-md border border-border bg-bg-card p-3 text-sm shadow-sm active:cursor-grabbing ${
+      onKeyDown={(e) => {
+        if (!overlay && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onOpen?.(task);
+        }
+      }}
+      className={`cursor-grab rounded-md border border-border bg-bg-card p-3 text-sm shadow-sm transition-colors active:cursor-grabbing ${
         isDragging && !overlay ? "opacity-30" : ""
       } ${overlay ? "rotate-2 shadow-xl" : "hover:border-fg-subtle"}`}
     >

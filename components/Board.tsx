@@ -19,7 +19,25 @@ import { resolveTicketAction } from "@/lib/ticket-link";
 import { Nav } from "./Nav";
 import { TaskCard } from "./TaskCard";
 import { EditDrawer } from "./EditDrawer";
+import { BoardSkeleton } from "./ui";
 import { toast } from "./Toast";
+
+// Screen-reader narration for drag-and-drop. @dnd-kit announces these via a
+// visually-hidden live region so non-visual users can follow card moves.
+const dndAnnouncements = {
+  onDragStart({ active }: { active: { data: { current?: any } } }) {
+    return `Picked up task ${active.data.current?.task?.title ?? ""}.`;
+  },
+  onDragOver({ over }: { over: { id: string | number } | null }) {
+    return over ? `Over ${over.id} column.` : "Not over a column.";
+  },
+  onDragEnd({ over }: { over: { id: string | number } | null }) {
+    return over ? `Dropped in ${over.id} column.` : "Drop cancelled.";
+  },
+  onDragCancel() {
+    return "Move cancelled.";
+  },
+};
 
 function Column({
   statusKey,
@@ -49,12 +67,16 @@ function Column({
   };
 
   return (
-    <div className="flex h-full max-h-full w-72 shrink-0 flex-col rounded-lg bg-bg-soft">
+    <section
+      role="region"
+      aria-label={`${label} column, ${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
+      className="flex h-full max-h-full w-72 max-w-[85vw] shrink-0 flex-col rounded-lg bg-bg-soft"
+    >
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-medium text-fg">
           {label}
           {isFinal && (
-            <span className="rounded bg-bg-card px-1.5 py-0.5 text-[10px] text-amber-400">
+            <span className="rounded bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning">
               final
             </span>
           )}
@@ -64,7 +86,7 @@ function Column({
           {isFinal && tasks.length > 0 && (
             <button
               onClick={() => onArchiveAll(statusKey)}
-              className="rounded text-xs text-fg-subtle hover:text-fg"
+              className="rounded px-1 text-xs text-fg-subtle hover:text-fg"
               title={`Archive all ${tasks.length} ticket(s) in ${label}`}
             >
               Archive all ({tasks.length})
@@ -72,8 +94,9 @@ function Column({
           )}
           <button
             onClick={() => setAdding(true)}
-            className="text-fg-subtle hover:text-fg"
-            title="Add task"
+            className="grid h-6 w-6 place-items-center rounded text-lg leading-none text-fg-subtle hover:bg-bg-card hover:text-fg"
+            title={`Add task to ${label}`}
+            aria-label={`Add task to ${label}`}
           >
             +
           </button>
@@ -81,7 +104,8 @@ function Column({
       </div>
       <div
         ref={setNodeRef}
-        className={`flex min-h-[60px] flex-1 flex-col gap-2 overflow-y-auto p-2 ${
+        role="list"
+        className={`flex min-h-[60px] flex-1 flex-col gap-2 overflow-y-auto p-2 transition-colors ${
           isOver ? "rounded-lg bg-bg-card/60 ring-1 ring-accent" : ""
         }`}
       >
@@ -100,14 +124,15 @@ function Column({
             }}
             placeholder="Task title…"
             rows={2}
-            className="resize-none rounded-md border border-border bg-bg-card p-2 text-sm outline-none"
+            aria-label={`New task title in ${label}`}
+            className="resize-none rounded-md border border-border bg-bg-card p-2 text-sm outline-none focus:border-accent"
           />
         )}
         {tasks.map((t) => (
           <TaskCard key={t.id} task={t} onOpen={onOpen} />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -259,12 +284,19 @@ export function Board() {
       />
 
       {!selectedId ? (
-        <div className="flex flex-1 items-center justify-center text-fg-subtle">
-          {loaded ? "Create a project to begin." : "Loading…"}
-        </div>
+        loaded ? (
+          <div className="flex flex-1 items-center justify-center text-fg-subtle">
+            Create a project to begin.
+          </div>
+        ) : (
+          <BoardSkeleton />
+        )
+      ) : !sm ? (
+        <BoardSkeleton />
       ) : (
         <DndContext
           sensors={sensors}
+          accessibility={{ announcements: dndAnnouncements }}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           onDragCancel={() => {
@@ -272,7 +304,7 @@ export function Board() {
             setActive(null);
           }}
         >
-          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
+          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 sm:p-4">
             {sm?.statuses.map((s) => (
               <Column
                 key={s.key}
