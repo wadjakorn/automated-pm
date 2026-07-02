@@ -114,7 +114,8 @@ pm status update --project <id|name> --key <key> [--label ...] [--final <bool>] 
 # aliases: ls=list, mv=move, rm=delete
 Output is TTY-aware: piped/non-TTY stdout = JSON (parsing unchanged); a terminal
 gets pretty tables. Force with --json / --pretty; --api <url> overrides PM_API;
---version prints the version. Exit 0 ok / non-zero on error.
+`pm --version` prints the version (after a subcommand, --version <n> is the
+optimistic-lock option, not the global flag). Exit 0 ok / non-zero on error.
 
 Make `pm` a standalone command: shebang `#!/usr/bin/env -S tsx` on cli/pm.ts
 (run tsx as the interpreter — a PATH executable; do NOT use `node --import tsx`,

@@ -77,7 +77,11 @@ Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
   `--pretty`; disable color with `--no-color` or `NO_COLOR`. Agents should pass
   `--json` when they need to be certain, though piped output is already JSON.
 - **Global flags:** `--api <url>` (overrides `PM_API`), `--version`, plus the
-  output flags above. They may appear in any position.
+  output flags above. Output flags and `--api` may appear in any position.
+  `--version` is global (print CLI version) only before the subcommand or when
+  it carries no value (`pm --version`); after a subcommand, `--version <n>` is
+  that command's optimistic-lock option (`task update` / `task move`). `-v` is
+  always the global version flag.
 
 ## 2. Command reference
 

@@ -26,7 +26,9 @@ you cannot corrupt state by issuing a bad command — you get a JSON error inste
   `--no-color`/`NO_COLOR` disable color).
 - **Exit 0** = success; **non-zero** = failure (JSON has an `error` field).
 - **Global flags** (any position): `--json`, `--pretty`, `--no-color`,
-  `--api <url>` (overrides `PM_API`), `--version`.
+  `--api <url>` (overrides `PM_API`). `pm --version` prints the CLI version,
+  but after a subcommand `--version <n>` is the optimistic-lock option
+  (task update/move), not the global flag.
 - Parse stdout as JSON. Branch on `error`:
 
 | `error` value         | HTTP | Meaning / what to do |
