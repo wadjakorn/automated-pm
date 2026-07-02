@@ -47,4 +47,34 @@ describe("resolveGlobals", () => {
     expect(resolveGlobals({ ...base, argv: ["-v"] }).showVersion).toBe(true);
     expect(resolveGlobals({ ...base, argv: ["project", "-v", "list"] }).argv).toEqual(["project", "list"]);
   });
+
+  it("--version <n> after a subcommand is the optimistic-lock option, not the global flag", () => {
+    const update = resolveGlobals({
+      ...base,
+      argv: ["task", "update", "--id", "X", "--version", "3", "--title", "t"],
+    });
+    expect(update.showVersion).toBe(false);
+    expect(update.argv).toEqual(["task", "update", "--id", "X", "--version", "3", "--title", "t"]);
+
+    const move = resolveGlobals({
+      ...base,
+      argv: ["task", "move", "--id", "X", "--status", "doing", "--version", "5"],
+    });
+    expect(move.showVersion).toBe(false);
+    expect(move.argv).toEqual(["task", "move", "--id", "X", "--status", "doing", "--version", "5"]);
+  });
+
+  it("--version stays global before the subcommand or when it has no value", () => {
+    const before = resolveGlobals({ ...base, argv: ["--version", "task", "update"] });
+    expect(before.showVersion).toBe(true);
+    expect(before.argv).toEqual(["task", "update"]);
+
+    // valueless after a subcommand (end of argv or followed by another flag)
+    expect(
+      resolveGlobals({ ...base, argv: ["task", "update", "--id", "X", "--version"] }).showVersion
+    ).toBe(true);
+    expect(
+      resolveGlobals({ ...base, argv: ["task", "update", "--version", "--id", "X"] }).showVersion
+    ).toBe(true);
+  });
 });
