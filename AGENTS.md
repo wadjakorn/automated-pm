@@ -91,10 +91,14 @@ pm task link rm   --id <id> --link <linkId>
 pm board --project <id|name>                        # columns view: tasks grouped by status
 
 # changing --name or --remote-url is a guarded edit: it needs --confirm.
-pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--confirm]
+# --default-status (not guarded) sets the status new tasks land in without an
+# explicit --status; '' clears it (→ first status).
+pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--confirm]
 pm project delete --project <id|name>               # soft delete (recoverable via UI/Trash)
 
-pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>]
+# --hidden hides a status column from the WEB board only (tasks stay live &
+# movable; `pm board` shows it tagged "(hidden)").
+pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>] [--hidden <true|false>]
 #   generalizes `status set-final`; set-final still works.
 
 # Action aliases: ls=list, mv=move, rm=delete  (e.g. pm task ls --project demo)

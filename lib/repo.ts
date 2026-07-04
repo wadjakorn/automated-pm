@@ -38,7 +38,7 @@ const id = () => nanoid(12);
 
 // ---- row mappers (SQLite stores booleans as 0/1) ----
 function mapStatus(r: any): Status {
-  return { ...r, is_final: !!r.is_final };
+  return { ...r, is_final: !!r.is_final, hidden: !!r.hidden };
 }
 
 const publicUser = (u: User): PublicUser => ({
@@ -164,6 +164,10 @@ export function updateProject(
     name?: string;
     description?: string | null;
     remote_repo_url?: string | null;
+    // Status key new tasks land in when none is given. undefined = leave as-is;
+    // null/"" = clear (fall back to first status); a string must be an existing
+    // status key. Not guarded by confirm — it is not an identity/safety field.
+    default_status_key?: string | null;
     // Guard: changing name or remote_repo_url is a sensitive edit (the name is
     // an identifier; the URL is what agents act on). Require an explicit
     // confirm so neither a human nor an agent changes them by accident.
@@ -178,6 +182,12 @@ export function updateProject(
     patch.remote_repo_url === undefined
       ? p.remote_repo_url
       : normalizeRemoteRepoUrl(patch.remote_repo_url);
+  const defaultStatusKey =
+    patch.default_status_key === undefined
+      ? p.default_status_key
+      : patch.default_status_key === null || patch.default_status_key === ""
+        ? null
+        : patch.default_status_key;
 
   const nameChanged = name !== p.name;
   const urlChanged = remoteRepoUrl !== p.remote_repo_url;
@@ -196,11 +206,19 @@ export function updateProject(
   if (remoteRepoUrl !== null && !isRemoteRepoUrl(remoteRepoUrl)) {
     throw badRequest(`invalid remote repository URL "${remoteRepoUrl}"`);
   }
+  // A set default must name an existing status of this project.
+  if (
+    defaultStatusKey !== null &&
+    defaultStatusKey !== p.default_status_key &&
+    !getStateMachine(p.id).statuses.some((s) => s.key === defaultStatusKey)
+  ) {
+    throw badRequest(`unknown status "${defaultStatusKey}"`);
+  }
   getDb()
     .prepare(
-      "UPDATE projects SET name=?, description=?, remote_repo_url=?, updated_at=? WHERE id=?"
+      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, updated_at=? WHERE id=?"
     )
-    .run(name, description, remoteRepoUrl, now(), p.id);
+    .run(name, description, remoteRepoUrl, defaultStatusKey, now(), p.id);
   return getProject(p.id);
 }
 
@@ -253,7 +271,7 @@ export function addStatus(
 export function updateStatus(
   projectId: string,
   key: string,
-  patch: { label?: string; is_final?: boolean; sort_order?: number }
+  patch: { label?: string; is_final?: boolean; sort_order?: number; hidden?: boolean }
 ): StateMachine {
   projectId = getProject(projectId).id;
   const sm = getStateMachine(projectId);
@@ -261,11 +279,12 @@ export function updateStatus(
   if (!s) throw notFound("status");
   const db = getDb();
   db.prepare(
-    "UPDATE statuses SET label=?, is_final=?, sort_order=? WHERE project_id=? AND key=?"
+    "UPDATE statuses SET label=?, is_final=?, sort_order=?, hidden=? WHERE project_id=? AND key=?"
   ).run(
     patch.label?.trim() ?? s.label,
     (patch.is_final ?? s.is_final) ? 1 : 0,
     patch.sort_order ?? s.sort_order,
+    (patch.hidden ?? s.hidden) ? 1 : 0,
     projectId,
     key
   );
@@ -447,10 +466,18 @@ export function createTask(
     priority?: string;
   }
 ): Task {
-  projectId = getProject(projectId).id;
+  const project = getProject(projectId);
+  projectId = project.id;
   if (!data.title?.trim()) throw badRequest("title is required");
   const sm = getStateMachine(projectId);
-  const statusKey = data.status ?? sm.statuses[0]?.key;
+  // Status resolution: explicit > project default (if it still names a live
+  // status — stale defaults fall back gracefully) > first status.
+  const validDefault =
+    project.default_status_key &&
+    sm.statuses.some((s) => s.key === project.default_status_key)
+      ? project.default_status_key
+      : undefined;
+  const statusKey = data.status ?? validDefault ?? sm.statuses[0]?.key;
   if (!sm.statuses.some((s) => s.key === statusKey))
     throw badRequest(`unknown status "${statusKey}"`);
   const assigneeId =

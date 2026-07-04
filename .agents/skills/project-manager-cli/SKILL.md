@@ -133,11 +133,18 @@ pm board        --project <id|name>                      # columns view: tasks g
 pm ready        [--project <id|name>] [--assignee <id|username>]   # ready tickets (+repo, +desc) for the poll routine; needs PM_TOKEN
 
 # changing --name or --remote-url is a GUARDED edit: it needs --confirm (else
-# bad_request). --description is not guarded. --remote-url '' clears the URL.
-pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--confirm]
+# bad_request). --description and --default-status are NOT guarded. --remote-url
+# '' clears the URL; --default-status '' clears the default (→ first status).
+# --default-status sets the status new tasks land in when created without an
+# explicit --status; the key must be an existing status (else bad_request), and
+# a stale default (its status later removed) falls back to the first status.
+pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--confirm]
 pm project delete --project <id|name>                    # soft delete (recoverable via the UI/Trash)
 
-pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>]
+# --hidden hides a status column from the WEB board only (project-level; every
+# viewer sees the same board). Tasks in a hidden status stay live, listed, and
+# movable; `pm board` still shows the column tagged "(hidden)".
+pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>] [--hidden <true|false>]
 #   generalizes `status set-final`; `set-final` still works.
 
 # Action aliases: ls=list, mv=move, rm=delete  (e.g. `pm task ls --project demo`)

@@ -68,8 +68,14 @@ function renderTask(t: any, o: RenderOpts): string {
 
 function renderStateMachine(sm: any): string {
   const statuses = table(
-    ["KEY", "LABEL", "FINAL", "ORDER"],
-    (sm.statuses ?? []).map((s: any) => [s.key, s.label, s.is_final ? "yes" : "", String(s.sort_order)])
+    ["KEY", "LABEL", "FINAL", "HIDDEN", "ORDER"],
+    (sm.statuses ?? []).map((s: any) => [
+      s.key,
+      s.label,
+      s.is_final ? "yes" : "",
+      s.hidden ? "yes" : "",
+      String(s.sort_order),
+    ])
   );
   const edges = (sm.transitions ?? []).length
     ? sm.transitions.map((t: any) => `  ${t.from_key} → ${t.to_key}`).join("\n")
@@ -88,7 +94,14 @@ function renderReady(list: any[]): string {
 function renderBoard(b: any, o: RenderOpts): string {
   return (b.columns ?? [])
     .map((col: any) => {
-      const head = paint(`${col.status.label} (${col.tasks.length})`, ANSI.bold, o.color);
+      // CLI shows every column; hidden-from-web columns are tagged, not dropped
+      // (agents/operators need full visibility).
+      const hidden = col.status.hidden ? " (hidden)" : "";
+      const head = paint(
+        `${col.status.label} (${col.tasks.length})${hidden}`,
+        ANSI.bold,
+        o.color
+      );
       const items = col.tasks.length
         ? col.tasks.map((t: any) => `  • ${t.title}  ${paint(t.id, ANSI.dim, o.color)}`).join("\n")
         : "  (empty)";

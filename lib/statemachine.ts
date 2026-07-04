@@ -38,6 +38,7 @@ export function buildDefaultStateMachine(projectId: string): StateMachine {
     label: s.label,
     sort_order: i,
     is_final: s.is_final,
+    hidden: false,
   }));
   const transitions: Transition[] = DEFAULT_TRANSITIONS.map((t) => ({
     id: nanoid(12),

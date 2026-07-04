@@ -136,6 +136,17 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE tasks ADD COLUMN archived_at TEXT");
   }
 
+  // Hidden: hide a status column from the WEB board only (project-level view
+  // preference — every viewer sees the same board). Tasks in a hidden status
+  // stay live, listed, and movable; the CLI `pm board` still shows it tagged.
+  // INTEGER with a literal default so old rows migrate to 0 (not hidden).
+  const statusCols = new Set(
+    (db.prepare("PRAGMA table_info(statuses)").all() as { name: string }[]).map((c) => c.name)
+  );
+  if (!statusCols.has("hidden")) {
+    db.exec("ALTER TABLE statuses ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
+  }
+
   // Remote repository URL: the Git/remote URL the project tracks (agents read
   // it to know which repo to operate on). Nullable, no default → old rows stay
   // NULL (backward compat). Same idempotent table_info guard as the task cols.
@@ -144,6 +155,13 @@ function migrate(db: Database.Database) {
   );
   if (!projectCols.has("remote_repo_url")) {
     db.exec("ALTER TABLE projects ADD COLUMN remote_repo_url TEXT");
+  }
+  // Default status for new tasks: the status key a created task lands in when
+  // none is given. Nullable → NULL falls back to the first status (current
+  // behavior). A stale key (its status was removed) also falls back at create
+  // time, so no guard is needed on status removal.
+  if (!projectCols.has("default_status_key")) {
+    db.exec("ALTER TABLE projects ADD COLUMN default_status_key TEXT");
   }
 
   // Project names are unique among live (non-deleted) projects, so `--project`

@@ -48,7 +48,9 @@ export function Settings() {
     <Shell {...{ projects, selectedId, select, reload }}>
       <div className="mx-auto max-w-4xl space-y-8 p-6">
         {/* Project metadata */}
-        {project && <ProjectSection project={project} onSaved={reload} />}
+        {project && (
+          <ProjectSection project={project} statuses={statuses} onSaved={reload} />
+        )}
 
         {/* Statuses */}
         <section>
@@ -94,6 +96,20 @@ export function Settings() {
                     }
                   />
                   final
+                </label>
+                <label className="flex items-center gap-1 text-xs text-fg-muted">
+                  <input
+                    type="checkbox"
+                    checked={s.hidden}
+                    onChange={(e) =>
+                      run(() =>
+                        api.updateStatus(selectedId, s.key, {
+                          hidden: e.target.checked,
+                        })
+                      )
+                    }
+                  />
+                  hidden
                 </label>
                 <div className="flex gap-1">
                   <button
@@ -238,15 +254,29 @@ export function Settings() {
 // requires confirm:true for name/URL changes, so the Save below sends it.
 function ProjectSection({
   project,
+  statuses,
   onSaved,
 }: {
   project: Project;
+  statuses: StateMachine["statuses"];
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(project.name);
   const [url, setUrl] = useState(project.remote_repo_url ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Default status for new tasks. Applied immediately on change (not behind the
+  // name/URL "Edit" confirm gate — it is not a sensitive/identity field).
+  async function setDefaultStatus(key: string) {
+    try {
+      await api.updateProject(project.id, { default_status_key: key || null });
+      onSaved();
+      toast("Default status updated", "success");
+    } catch (e) {
+      toast((e as ApiClientError).message ?? "Failed", "error");
+    }
+  }
 
   function startEdit() {
     setName(project.name);
@@ -348,6 +378,21 @@ function ProjectSection({
                 <span className="text-fg-subtle">— not set</span>
               )}
             </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="w-40 text-fg-subtle">Default status</span>
+            <select
+              value={project.default_status_key ?? ""}
+              onChange={(e) => setDefaultStatus(e.target.value)}
+              className="rounded border border-border bg-bg-card px-2 py-1 text-sm outline-none"
+            >
+              <option value="">First status</option>
+              {statuses.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       )}
