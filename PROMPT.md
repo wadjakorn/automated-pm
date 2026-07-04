@@ -108,9 +108,9 @@ pm task link add  --id <id> --to <url|id> --type <type>
 pm task link list --id <id>
 pm task link rm   --id <id> --link <linkId>
 pm board --project <id|name>                              # columns grouped by status
-pm project update --project <id|name> [--name <new>] [--description ...] [--remote-url <url>] [--confirm]  # name/url need --confirm
+pm project update --project <id|name> [--name <new>] [--description ...] [--remote-url <url>] [--default-status <key>] [--confirm]  # name/url need --confirm; --default-status sets new-task status, '' clears
 pm project delete --project <id|name>                     # soft delete
-pm status update --project <id|name> --key <key> [--label ...] [--final <bool>] [--order N]
+pm status update --project <id|name> --key <key> [--label ...] [--final <bool>] [--order N] [--hidden <bool>]  # --hidden = off web board only, still listed/movable
 # aliases: ls=list, mv=move, rm=delete
 Output is TTY-aware: piped/non-TTY stdout = JSON (parsing unchanged); a terminal
 gets pretty tables. Force with --json / --pretty; --api <url> overrides PM_API;

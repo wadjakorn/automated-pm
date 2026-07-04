@@ -305,7 +305,7 @@ export function Board() {
           }}
         >
           <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 sm:p-4">
-            {sm?.statuses.map((s) => (
+            {sm?.statuses.filter((s) => !s.hidden).map((s) => (
               <Column
                 key={s.key}
                 statusKey={s.key}

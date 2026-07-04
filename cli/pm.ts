@@ -104,14 +104,14 @@ const HELP = `pm — Project Manager CLI
   pm project create --name <name> [--description <text>]
   pm project list
   # changing --name or --remote-url is a guarded edit: it needs --confirm.
-  pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--confirm]
+  pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--confirm]
   pm project delete --project <id|name>
 
   # --project accepts a project id OR its (unique) name, e.g. --project 'demo'
   pm status list --project <id|name>
   pm status add --project <id|name> --key <key> --label <label> [--final]
   pm status set-final --project <id|name> --key <key> --final <true|false>
-  pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>]
+  pm status update --project <id|name> --key <key> [--label <l>] [--final <true|false>] [--order <n>] [--hidden <true|false>]
   pm status remove --project <id|name> --key <key>
 
   pm transition add --project <id|name> --from <key> --to <key>
@@ -274,6 +274,9 @@ async function main() {
           // --remote-url '' clears it; the server normalizes/validates.
           remote_repo_url:
             typeof f["remote-url"] === "string" ? f["remote-url"] : undefined,
+          // --default-status '' clears it (→ first status); server validates key.
+          default_status_key:
+            typeof f["default-status"] === "string" ? f["default-status"] : undefined,
           // Guard: the server rejects a name/URL change unless confirm is true.
           confirm: f.confirm === true,
         })
@@ -309,6 +312,8 @@ async function main() {
           is_final:
             f.final === undefined ? undefined : f.final === "true" || f.final === true,
           sort_order: typeof f.order === "string" ? Number(f.order) : undefined,
+          hidden:
+            f.hidden === undefined ? undefined : f.hidden === "true" || f.hidden === true,
         })
       );
     case "status remove":

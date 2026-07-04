@@ -8,6 +8,9 @@ export interface Project {
   // Git/remote URL the project tracks (agents read it to know which repo to
   // operate on). Nullable; edited only via the guarded updateProject path.
   remote_repo_url: string | null;
+  // Status key new tasks land in when none is given. Null → first status.
+  // A stale key (status since removed) also falls back to the first status.
+  default_status_key: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -20,6 +23,9 @@ export interface Status {
   label: string;
   sort_order: number;
   is_final: boolean;
+  // Hide this column from the WEB board only (project-level view preference).
+  // Tasks in a hidden status stay live, listed, and movable.
+  hidden: boolean;
 }
 
 export interface Transition {

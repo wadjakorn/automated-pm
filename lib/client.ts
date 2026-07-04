@@ -49,6 +49,8 @@ export const api = {
       name?: string;
       description?: string | null;
       remote_repo_url?: string | null;
+      // Status key new tasks default to; null/"" clears (→ first status).
+      default_status_key?: string | null;
       // Required by the server when name or remote_repo_url changes.
       confirm?: boolean;
     }
@@ -67,7 +69,7 @@ export const api = {
   updateStatus: (
     projectId: string,
     key: string,
-    patch: { label?: string; is_final?: boolean; sort_order?: number }
+    patch: { label?: string; is_final?: boolean; sort_order?: number; hidden?: boolean }
   ) =>
     req<StateMachine>("PATCH", `/api/projects/${projectId}/statuses`, {
       key,
