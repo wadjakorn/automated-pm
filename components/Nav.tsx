@@ -47,8 +47,30 @@ export function Nav({
     return (
       <Link
         href={href + q}
-        className={`rounded px-3 py-1.5 text-sm ${
-          active ? "bg-bg-card text-fg" : "text-fg-muted hover:text-fg"
+        className={`px-3 py-1.5 text-sm ${
+          active
+            ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+            : "text-fg-muted hover:text-fg"
+        }`}
+      >
+        {label}
+      </Link>
+    );
+  };
+
+  const projectMenuActive =
+    pathname === "/settings" || pathname === "/archive" || pathname === "/trash";
+
+  const projectLink = (href: string, label: string) => {
+    const active = pathname === href;
+    const q = selectedId ? `?project=${selectedId}` : "";
+    return (
+      <Link
+        href={href + q}
+        className={`block rounded px-3 py-2 text-sm ${
+          active
+            ? "bg-accent-soft text-accent"
+            : "text-fg-muted hover:bg-bg-soft hover:text-fg"
         }`}
       >
         {label}
@@ -71,7 +93,7 @@ export function Nav({
   }
 
   return (
-    <header className="flex flex-wrap items-center gap-2 border-b border-border bg-bg-soft px-3 py-2 sm:gap-4 sm:px-5 sm:py-3">
+    <header className="theme-nav flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:gap-4 sm:px-5 sm:py-3">
       <span className="font-semibold text-fg">📋 PM</span>
 
       <select
@@ -122,9 +144,23 @@ export function Nav({
 
       <nav className="ml-auto flex items-center gap-1 overflow-x-auto">
         {link("/", "Board")}
-        {link("/settings", "Settings")}
-        {link("/archive", "Archive")}
-        {link("/trash", "Trash")}
+        {link("/appearance", "Appearance")}
+        <details className="group relative">
+          <summary
+            className={`list-none px-3 py-1.5 text-sm cursor-pointer ${
+              projectMenuActive
+                ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+                : "text-fg-muted hover:text-fg"
+            }`}
+          >
+            Project
+          </summary>
+          <div className="theme-panel absolute right-0 z-20 mt-2 min-w-40 border border-border bg-bg-card p-2">
+            {projectLink("/settings", "Settings")}
+            {projectLink("/archive", "Archive")}
+            {projectLink("/trash", "Trash")}
+          </div>
+        </details>
         <button
           onClick={() => setChoice(nextChoice(choice))}
           title={themeLabel}
