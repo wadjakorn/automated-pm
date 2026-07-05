@@ -7,8 +7,8 @@ export const metadata: Metadata = {
   description: "Kanban board with a state machine and an LLM-friendly CLI",
 };
 
-// Runs before first paint to set .dark from storage/OS — prevents a theme flash.
-const NO_FLASH = `(function(){try{var c=localStorage.getItem('theme');var d=c==='dark'||((!c||c==='system')&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
+// Runs before first paint to set theme mode/pack/accent from storage — prevents a flash.
+const NO_FLASH = `(function(){try{var c=localStorage.getItem('theme');var p=localStorage.getItem('theme-pack');var a=localStorage.getItem('theme-accent');var d=c==='dark'||((!c||c==='system')&&matchMedia('(prefers-color-scheme: dark)').matches);var pack=p==='claude'||p==='pixel'||p==='apple'||p==='default'?p:'default';var accent=a==='green'||a==='rose'||a==='amber'||a==='violet'||a==='blue'?a:'blue';document.documentElement.classList.toggle('dark',d);document.documentElement.dataset.themePack=pack;document.documentElement.dataset.accent=accent;}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Project, StateMachine } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
 import { useProjects } from "./useApp";
-import { Nav } from "./Nav";
+import { AppShell } from "./AppShell";
 import { toast } from "./Toast";
 
 export function Settings() {
@@ -33,11 +33,11 @@ export function Settings() {
 
   if (!selectedId)
     return (
-      <Shell {...{ projects, selectedId, select, reload }}>
+      <AppShell {...{ projects, selectedId, select, reload }}>
         <div className="p-6 text-fg-subtle">
           {loaded ? "Create a project first." : "Loading…"}
         </div>
-      </Shell>
+      </AppShell>
     );
 
   const statuses = sm?.statuses ?? [];
@@ -45,7 +45,7 @@ export function Settings() {
     sm?.transitions.some((t) => t.from_key === from && t.to_key === to) ?? false;
 
   return (
-    <Shell {...{ projects, selectedId, select, reload }}>
+    <AppShell {...{ projects, selectedId, select, reload }}>
       <div className="mx-auto max-w-4xl space-y-8 p-6">
         {/* Project metadata */}
         {project && (
@@ -244,7 +244,7 @@ export function Settings() {
           </div>
         </section>
       </div>
-    </Shell>
+    </AppShell>
   );
 }
 
@@ -329,7 +329,7 @@ function ProjectSection({
       </div>
 
       {editing ? (
-        <div className="space-y-3 rounded border border-border bg-bg-soft p-4">
+        <div className="theme-panel space-y-3 border border-border bg-bg-soft p-4">
           <label className="block">
             <span className="mb-1 block text-xs text-fg-subtle">Name</span>
             <input
@@ -366,7 +366,7 @@ function ProjectSection({
           </div>
         </div>
       ) : (
-        <div className="space-y-2 rounded border border-border bg-bg-soft px-4 py-3 text-sm">
+        <div className="theme-panel space-y-2 border border-border bg-bg-soft px-4 py-3 text-sm">
           <div className="flex gap-3">
             <span className="w-40 text-fg-subtle">Name</span>
             <span className="text-fg">{project.name}</span>
@@ -397,31 +397,5 @@ function ProjectSection({
         </div>
       )}
     </section>
-  );
-}
-
-function Shell({
-  projects,
-  selectedId,
-  select,
-  reload,
-  children,
-}: {
-  projects: any[];
-  selectedId: string | null;
-  select: (id: string) => void;
-  reload: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex h-screen flex-col">
-      <Nav
-        projects={projects}
-        selectedId={selectedId}
-        onSelect={select}
-        onProjectsChanged={reload}
-      />
-      <div className="flex-1 overflow-y-auto">{children}</div>
-    </div>
   );
 }
