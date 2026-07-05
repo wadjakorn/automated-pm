@@ -74,10 +74,17 @@ export function EditDrawer({
     onClose();
   }, [dirty, onClose]);
 
-  // Esc closes the drawer (routes through the dirty guard). Focus the panel on
-  // mount so keyboard users land inside it, and trap Tab within the drawer.
+  // Focus the panel once on mount so keyboard users land inside it. Kept in its
+  // own mount-only effect: folding it into the keydown effect below re-ran
+  // `panelRef.focus()` whenever `requestClose` changed identity (first keystroke
+  // flips `dirty`), stealing focus off the title/description input.
   useEffect(() => {
     panelRef.current?.focus();
+  }, []);
+
+  // Esc closes the drawer (routes through the dirty guard), and Tab is trapped
+  // within the drawer.
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
