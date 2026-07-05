@@ -142,7 +142,7 @@ export function Nav({
         </button>
       )}
 
-      <nav className="ml-auto flex items-center gap-1 overflow-x-auto">
+      <nav className="ml-auto flex flex-wrap items-center gap-1">
         {link("/", "Board")}
         {link("/appearance", "Appearance")}
         <details className="group relative">
