@@ -51,6 +51,9 @@ export const api = {
       remote_repo_url?: string | null;
       // Status key new tasks default to; null/"" clears (→ first status).
       default_status_key?: string | null;
+      // Per-project theme (web UI); null/"" clears (→ default pack/accent).
+      theme_pack?: string | null;
+      theme_accent?: string | null;
       // Required by the server when name or remote_repo_url changes.
       confirm?: boolean;
     }

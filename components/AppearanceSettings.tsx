@@ -1,20 +1,73 @@
 "use client";
 
 import { useTheme } from "./ThemeProvider";
-import { ACCENT_PRESETS, THEME_CHOICES, THEME_PACKS } from "./theme";
+import { api } from "@/lib/client";
+import { toast } from "./Toast";
+import {
+  ACCENT_PRESETS,
+  THEME_CHOICES,
+  THEME_PACKS,
+  type AccentChoice,
+  type ThemePack,
+} from "./theme";
 
-export function AppearanceSettings() {
+// Appearance editor. Theme pack + accent belong to the SELECTED PROJECT and are
+// saved on the server (so they follow the project across devices). Light/dark
+// MODE is a separate per-browser preference. `projectId` null → no project to
+// save to (pack/accent picks won't persist); `onSaved` reloads projects so the
+// board re-applies the stored theme.
+export function AppearanceSettings({
+  projectId,
+  projectName,
+  onSaved,
+}: {
+  projectId: string | null;
+  projectName: string | null;
+  onSaved: () => void;
+}) {
   const { choice, setChoice, pack, setPack, accent, setAccent } = useTheme();
   const activePack = THEME_PACKS.find((entry) => entry.key === pack) ?? THEME_PACKS[0];
+
+  async function choosePack(next: ThemePack) {
+    setPack(next); // instant visual feedback
+    if (!projectId) return;
+    try {
+      await api.updateProject(projectId, { theme_pack: next });
+      onSaved();
+    } catch (e: any) {
+      toast(e.message ?? "Failed to save theme", "error");
+    }
+  }
+
+  async function chooseAccent(next: AccentChoice) {
+    setAccent(next);
+    if (!projectId) return;
+    try {
+      await api.updateProject(projectId, { theme_accent: next });
+      onSaved();
+    } catch (e: any) {
+      toast(e.message ?? "Failed to save accent", "error");
+    }
+  }
 
   return (
     <div className="space-y-8 p-6">
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold text-fg">Appearance</h1>
         <p className="max-w-2xl text-sm text-fg-muted">
-          These settings apply to the whole app in this browser. They do not belong
-          to the current project.
+          Theme pack and accent apply to{" "}
+          <span className="font-medium text-fg">
+            {projectName ? `the “${projectName}” project` : "the selected project"}
+          </span>{" "}
+          and are saved on the server, so they follow the project on any device.
+          Light/dark mode is a separate per-browser preference.
         </p>
+        {!projectId && (
+          <p role="alert" className="text-sm text-warning">
+            No project selected — pack/accent changes won’t be saved. Create or
+            select a project first.
+          </p>
+        )}
       </section>
 
       <section className="theme-panel space-y-4 border border-border bg-bg-soft p-5">
@@ -30,7 +83,7 @@ export function AppearanceSettings() {
                   key={themePack.key}
                   type="button"
                   aria-pressed={active}
-                  onClick={() => setPack(themePack.key)}
+                  onClick={() => choosePack(themePack.key)}
                   className={`theme-card flex items-start justify-between border p-4 text-left ${
                     active
                       ? "border-accent bg-accent-soft text-accent"
@@ -96,7 +149,7 @@ export function AppearanceSettings() {
                     type="button"
                     aria-label={`Accent: ${preset.label}`}
                     aria-pressed={active}
-                    onClick={() => setAccent(preset.key)}
+                    onClick={() => chooseAccent(preset.key)}
                     className={`theme-card flex h-10 min-w-24 items-center gap-2 border px-3 text-sm ${
                       active
                         ? "border-accent bg-accent-soft text-accent"
@@ -122,9 +175,9 @@ export function AppearanceSettings() {
           Scope
         </div>
         <ul className="space-y-2 text-sm text-fg-muted">
-          <li>Applies to all projects in this app.</li>
-          <li>Stored locally in this browser.</li>
-          <li>Separate from project settings like statuses, transitions, and repo URL.</li>
+          <li>Theme pack &amp; accent are saved on the selected project.</li>
+          <li>They apply for anyone viewing that project, on any device.</li>
+          <li>Light/dark mode is stored locally in this browser.</li>
         </ul>
       </section>
     </div>

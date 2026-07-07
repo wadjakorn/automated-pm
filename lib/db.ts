@@ -163,6 +163,15 @@ function migrate(db: Database.Database) {
   if (!projectCols.has("default_status_key")) {
     db.exec("ALTER TABLE projects ADD COLUMN default_status_key TEXT");
   }
+  // Per-project theme (web UI): the theme pack + accent applied when this
+  // project is selected. Nullable → NULL falls back to the default pack/accent.
+  // Light/dark MODE stays a per-browser preference and is NOT stored here.
+  if (!projectCols.has("theme_pack")) {
+    db.exec("ALTER TABLE projects ADD COLUMN theme_pack TEXT");
+  }
+  if (!projectCols.has("theme_accent")) {
+    db.exec("ALTER TABLE projects ADD COLUMN theme_accent TEXT");
+  }
 
   // Project names are unique among live (non-deleted) projects, so `--project`
   // can take a name instead of an id. Partial index ignores soft-deleted rows,
