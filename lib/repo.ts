@@ -5,6 +5,9 @@ import { badRequest, conflict, illegalTransition, notFound, unauthorized } from 
 import { hashPassword, newApiToken, verifyPassword } from "./auth";
 import { DEFAULT_PRIORITY, isPriority, type Priority } from "./priority";
 import { isRemoteRepoUrl, normalizeRemoteRepoUrl } from "./repo-url";
+// Theme value guards live with the UI theme registry (pure, no React), so the
+// server validates pack/accent against the same source of truth as the client.
+import { isAccentChoice, isThemePack } from "../components/theme";
 import {
   edgeFromOption,
   linkLabel,
@@ -168,6 +171,11 @@ export function updateProject(
     // null/"" = clear (fall back to first status); a string must be an existing
     // status key. Not guarded by confirm — it is not an identity/safety field.
     default_status_key?: string | null;
+    // Per-project theme (web UI). undefined = leave as-is; null/"" = clear (→
+    // default pack/accent). A set value must be a known pack/accent. Not a
+    // guarded field — theme is cosmetic, not identity/safety.
+    theme_pack?: string | null;
+    theme_accent?: string | null;
     // Guard: changing name or remote_repo_url is a sensitive edit (the name is
     // an identifier; the URL is what agents act on). Require an explicit
     // confirm so neither a human nor an agent changes them by accident.
@@ -188,6 +196,18 @@ export function updateProject(
       : patch.default_status_key === null || patch.default_status_key === ""
         ? null
         : patch.default_status_key;
+  const themePack =
+    patch.theme_pack === undefined
+      ? p.theme_pack
+      : patch.theme_pack === null || patch.theme_pack === ""
+        ? null
+        : patch.theme_pack;
+  const themeAccent =
+    patch.theme_accent === undefined
+      ? p.theme_accent
+      : patch.theme_accent === null || patch.theme_accent === ""
+        ? null
+        : patch.theme_accent;
 
   const nameChanged = name !== p.name;
   const urlChanged = remoteRepoUrl !== p.remote_repo_url;
@@ -214,11 +234,17 @@ export function updateProject(
   ) {
     throw badRequest(`unknown status "${defaultStatusKey}"`);
   }
+  if (themePack !== null && !isThemePack(themePack)) {
+    throw badRequest(`unknown theme pack "${themePack}"`);
+  }
+  if (themeAccent !== null && !isAccentChoice(themeAccent)) {
+    throw badRequest(`unknown theme accent "${themeAccent}"`);
+  }
   getDb()
     .prepare(
-      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, updated_at=? WHERE id=?"
+      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, theme_pack=?, theme_accent=?, updated_at=? WHERE id=?"
     )
-    .run(name, description, remoteRepoUrl, defaultStatusKey, now(), p.id);
+    .run(name, description, remoteRepoUrl, defaultStatusKey, themePack, themeAccent, now(), p.id);
   return getProject(p.id);
 }
 

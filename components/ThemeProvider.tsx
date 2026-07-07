@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import {
   isAccentChoice,
   isThemeChoice,
@@ -22,9 +22,9 @@ interface Ctx {
 }
 
 const ThemeCtx = createContext<Ctx | null>(null);
+// Only the light/dark MODE is persisted per-browser. Pack + accent now live on
+// the project (server-side) and are applied by <Nav> from the selected project.
 const THEME_KEY = "theme";
-const PACK_KEY = "theme-pack";
-const ACCENT_KEY = "theme-accent";
 
 function apply(resolved: "light" | "dark", pack: ThemePack, accent: AccentChoice) {
   const el = document.documentElement;
@@ -42,16 +42,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const storedTheme =
       typeof localStorage !== "undefined" ? localStorage.getItem(THEME_KEY) : null;
-    const storedPack =
-      typeof localStorage !== "undefined" ? localStorage.getItem(PACK_KEY) : null;
-    const storedAccent =
-      typeof localStorage !== "undefined" ? localStorage.getItem(ACCENT_KEY) : null;
-    const c: ThemeChoice = isThemeChoice(storedTheme) ? storedTheme : "system";
-    const p: ThemePack = isThemePack(storedPack) ? storedPack : "default";
-    const a: AccentChoice = isAccentChoice(storedAccent) ? storedAccent : "blue";
-    setChoiceState(c);
-    setPackState(p);
-    setAccentState(a);
+    if (isThemeChoice(storedTheme)) setChoiceState(storedTheme);
+    // Pack + accent are not read from storage — <Nav> applies them from the
+    // selected project once projects load.
   }, []);
 
   useEffect(() => {
@@ -68,26 +61,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [choice, pack, accent]);
 
-  const setChoice = (c: ThemeChoice) => {
+  const setChoice = useCallback((c: ThemeChoice) => {
     try {
       localStorage.setItem(THEME_KEY, c);
     } catch {}
     setChoiceState(c);
-  };
+  }, []);
 
-  const setPack = (p: ThemePack) => {
-    try {
-      localStorage.setItem(PACK_KEY, p);
-    } catch {}
-    setPackState(p);
-  };
+  // Pack + accent are applied only (no per-browser persistence). Persistence is
+  // the project's job: the appearance editor writes them to the project via the
+  // API, and <Nav> re-applies the selected project's values on navigation. An
+  // unknown value falls back to the default so stale data can't break the UI.
+  const setPack = useCallback((p: ThemePack) => {
+    setPackState(isThemePack(p) ? p : "default");
+  }, []);
 
-  const setAccent = (a: AccentChoice) => {
-    try {
-      localStorage.setItem(ACCENT_KEY, a);
-    } catch {}
-    setAccentState(a);
-  };
+  const setAccent = useCallback((a: AccentChoice) => {
+    setAccentState(isAccentChoice(a) ? a : "blue");
+  }, []);
 
   return (
     <ThemeCtx.Provider

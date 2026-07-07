@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { useAuth } from "./useApp";
 import { toast } from "./Toast";
 import { useTheme } from "./ThemeProvider";
-import { nextChoice } from "./theme";
+import { isAccentChoice, isThemePack, nextChoice } from "./theme";
 
 // Top bar: project switcher + create + nav links. Selected project is carried
 // in the ?project= query string so it survives navigation across pages.
@@ -25,11 +25,23 @@ export function Nav({
 }) {
   const pathname = usePathname();
   const { user, refresh } = useAuth();
-  const { choice, setChoice, resolved } = useTheme();
+  const { choice, setChoice, resolved, setPack, setAccent } = useTheme();
   const themeIcon = resolved === "dark" ? "🌙" : "☀️";
   const themeLabel = `Theme: ${choice}`;
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+
+  // Apply the selected project's theme pack + accent (persisted server-side, so
+  // it follows the project across devices). Runs on selection and whenever the
+  // project's stored theme changes; unknown/absent values fall back to defaults.
+  // The light/dark MODE is a separate per-browser preference (the toggle below).
+  const selected = projects.find((p) => p.id === selectedId);
+  const selPack = selected?.theme_pack ?? null;
+  const selAccent = selected?.theme_accent ?? null;
+  useEffect(() => {
+    setPack(isThemePack(selPack) ? selPack : "default");
+    setAccent(isAccentChoice(selAccent) ? selAccent : "blue");
+  }, [selPack, selAccent, setPack, setAccent]);
 
   async function logout() {
     try {
@@ -59,7 +71,10 @@ export function Nav({
   };
 
   const projectMenuActive =
-    pathname === "/settings" || pathname === "/archive" || pathname === "/trash";
+    pathname === "/settings" ||
+    pathname === "/appearance" ||
+    pathname === "/archive" ||
+    pathname === "/trash";
 
   const projectLink = (href: string, label: string) => {
     const active = pathname === href;
@@ -144,7 +159,6 @@ export function Nav({
 
       <nav className="ml-auto flex flex-wrap items-center gap-1">
         {link("/", "Board")}
-        {link("/appearance", "Appearance")}
         <details className="group relative">
           <summary
             className={`list-none px-3 py-1.5 text-sm cursor-pointer ${
@@ -157,6 +171,7 @@ export function Nav({
           </summary>
           <div className="theme-panel absolute right-0 z-20 mt-2 min-w-40 border border-border bg-bg-card p-2">
             {projectLink("/settings", "Settings")}
+            {projectLink("/appearance", "Appearance")}
             {projectLink("/archive", "Archive")}
             {projectLink("/trash", "Trash")}
           </div>

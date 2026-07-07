@@ -11,6 +11,11 @@ export interface Project {
   // Status key new tasks land in when none is given. Null → first status.
   // A stale key (status since removed) also falls back to the first status.
   default_status_key: string | null;
+  // Per-project theme (web UI): the theme pack + accent applied when this
+  // project is selected. Null → default pack/accent. Light/dark MODE is a
+  // separate per-browser preference and is not stored on the project.
+  theme_pack: string | null;
+  theme_accent: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

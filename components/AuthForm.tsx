@@ -2,15 +2,24 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiClientError } from "@/lib/client";
 import { Spinner } from "./ui";
 import { toast } from "./Toast";
 
 // Shared login/register form. On register, the one-time api_token is shown so
-// the user can copy it for CLI use (PM_TOKEN); login just redirects home.
+// the user can copy it for CLI use (PM_TOKEN); login redirects to `?next=` (set
+// by the auth-gate middleware) or the board.
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
+  const params = useSearchParams();
+  // Where to go after auth: the gate's ?next= if it's a safe internal path,
+  // else the board. Reject protocol-relative (//host) and absolute URLs.
+  const nextParam = params.get("next");
+  const dest =
+    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
+      ? nextParam
+      : "/";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,7 +44,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       } else {
         await api.login(username.trim(), password);
         toast("Logged in", "success");
-        router.push("/");
+        router.push(dest);
       }
     } catch (err) {
       const e2 = err as ApiClientError;
@@ -58,7 +67,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           {token}
         </code>
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push(dest)}
           className="rounded bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
         >
           Go to board
