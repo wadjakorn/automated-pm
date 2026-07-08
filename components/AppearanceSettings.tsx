@@ -91,7 +91,21 @@ export function AppearanceSettings({
                   }`}
                 >
                   <div>
-                    <div className="font-medium text-fg">{themePack.label}</div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="flex h-5 shrink-0 overflow-hidden rounded-full ring-1 ring-black/10"
+                      >
+                        {themePack.swatch.map((color, i) => (
+                          <span
+                            key={i}
+                            className="h-5 w-3"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </span>
+                      <span className="font-medium text-fg">{themePack.label}</span>
+                    </div>
                     <div className="mt-1 text-sm text-fg-muted">
                       {themePack.description}
                     </div>
