@@ -8,6 +8,7 @@ import { allowedTargets } from "@/lib/statemachine";
 import { shareLink, LINK_OPTIONS, type LinkOption } from "@/lib/ticket-link";
 import { copyText } from "@/lib/clipboard";
 import { compressImage, exceedsHardMax } from "@/lib/image-compress";
+import { PriorityIcon } from "./PriorityIcon";
 import { Markdown } from "./Markdown";
 import { Spinner } from "./ui";
 import { toast } from "./Toast";
@@ -247,10 +248,10 @@ export function EditDrawer({
                   toast(link, "success"); // last resort: surface the link to copy manually
                 }
               }}
-              className="text-xs text-fg-muted hover:text-fg"
+              className="font-mono text-xs text-fg-muted hover:text-fg"
               title="Copy link to this ticket"
             >
-              🔗 Copy link
+              🔗 {task.id}
             </button>
             <button
               onClick={requestClose}
@@ -358,18 +359,21 @@ export function EditDrawer({
         <label htmlFor="task-priority" className="text-xs text-fg-muted">
           Priority
         </label>
-        <select
-          id="task-priority"
-          value={priority}
-          onChange={(e) => setPriority(e.target.value as typeof priority)}
-          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-        >
-          {PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <PriorityIcon priority={priority} className="h-4 w-4 shrink-0" />
+          <select
+            id="task-priority"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value as typeof priority)}
+            className="flex-1 rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div>
           <div className="mb-1 text-xs text-fg-muted">
@@ -417,10 +421,11 @@ export function EditDrawer({
               Save
             </button>
           </div>
-          <div className="mt-2 text-[10px] text-fg-subtle">
-            id {task.id} · v{task.version}
-            {task.creator_username && <> · created by {task.creator_username}</>}
-          </div>
+          {task.creator_username && (
+            <div className="mt-2 text-[10px] text-fg-subtle">
+              created by {task.creator_username}
+            </div>
+          )}
         </div>
 
         {confirmDiscard && (
