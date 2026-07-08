@@ -86,6 +86,7 @@ export function TaskCard({
             type="button"
             onClick={copyIdLink}
             onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
             title="Copy link to this ticket"
             className="shrink-0 rounded font-mono text-[10px] text-fg-subtle hover:text-fg-muted"
           >
