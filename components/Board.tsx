@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -151,8 +152,15 @@ export function Board() {
   const [editing, setEditing] = useState<Task | null>(null);
   const [dragging, setDragging] = useState(false);
 
+  // Mouse: start dragging after a small 5px move (desktop, unchanged behavior).
+  // Touch: require a deliberate long-press before a drag begins, so ordinary
+  // vertical scrolling on mobile never gets hijacked into a card move. The
+  // `tolerance` lets a finger drift slightly during the press without cancelling.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    })
   );
 
   const loadSm = useCallback(async (pid: string) => {

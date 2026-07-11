@@ -85,6 +85,10 @@ export function TaskCard({
           <button
             type="button"
             onClick={copyIdLink}
+            // Stop the drag sensors (MouseSensor/TouchSensor) from activating
+            // when the copy button is pressed — they listen on mousedown/touchstart.
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             title="Copy link to this ticket"
