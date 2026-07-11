@@ -123,6 +123,7 @@ const HELP = `pm — Project Manager CLI
   # aliases: \`ls\`=list, \`mv\`=move, \`rm\`=delete (e.g. pm task ls --project demo)
   # task list auto-sorts each status by priority (now→high→medium→low), then rank
   pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <p>]
+  pm task get --id <id> [--include-deleted]   # fetch one task directly by id
   pm task move --id <id> --status <key> [--version <n>]
   pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <p>]
   pm task delete --id <id>
@@ -375,6 +376,12 @@ async function main() {
           priority: typeof f.priority === "string" ? f.priority : undefined,
         })
       );
+    }
+    case "task get": {
+      const qs = new URLSearchParams();
+      if (f["include-deleted"]) qs.set("includeDeleted", "true");
+      const q = qs.toString() ? `?${qs.toString()}` : "";
+      return emit("task", await api("GET", `/api/tasks/${need(f, "id")}${q}`));
     }
     case "task list": {
       const qs = new URLSearchParams({ project: need(f, "project") });
