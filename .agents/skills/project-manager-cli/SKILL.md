@@ -115,6 +115,7 @@ pm transition remove --project <id|name> --from <key> --to <key>
 pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task create  --project <id|name> --stdin              # one task per non-empty stdin line
 pm task list    --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>]
+pm task get     --id <id> [--include-deleted]            # fetch ONE task directly by id (no project needed)
 pm task move    --id <id> --status <key> [--version <n>]
 pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
 pm task delete  --id <id>          # soft delete (recoverable)
@@ -179,8 +180,9 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
 - **Archive ≠ delete.** `pm task archive` sets `archived_at` and is allowed
   **only for tickets in a final status** (else `bad_request`). Archived tickets
   leave every board but stay **live** — `pm task list` hides them (pass
-  `--include-archived` to see them), yet a direct id lookup (`pm task list ... `
-  / the UI deep link) still resolves them, and future search will include them.
+  `--include-archived` to see them), yet a direct id lookup (`pm task get --id
+  <id>` / the UI deep link) still resolves them, and future search will include
+  them.
   Reverse with `pm task unarchive`. `archived_at` and `deleted_at` are
   independent: archived tickets are not in Trash and trashed tickets are not in
   Archive. `pm task archive-final --project <p> --status <final-key>` archives a
