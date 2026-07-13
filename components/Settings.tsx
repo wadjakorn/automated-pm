@@ -49,7 +49,12 @@ export function Settings() {
       <div className="mx-auto max-w-4xl space-y-8 p-6">
         {/* Project metadata */}
         {project && (
-          <ProjectSection project={project} statuses={statuses} onSaved={reload} />
+          <ProjectSection
+            key={project.id}
+            project={project}
+            statuses={statuses}
+            onSaved={reload}
+          />
         )}
 
         {/* Statuses */}
