@@ -264,6 +264,7 @@ function ProjectSection({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(project.name);
   const [url, setUrl] = useState(project.remote_repo_url ?? "");
+  const [prefix, setPrefix] = useState(project.ticket_prefix ?? "");
   const [saving, setSaving] = useState(false);
 
   // Default status for new tasks. Applied immediately on change (not behind the
@@ -273,6 +274,21 @@ function ProjectSection({
       await api.updateProject(project.id, { default_status_key: key || null });
       onSaved();
       toast("Default status updated", "success");
+    } catch (e) {
+      toast((e as ApiClientError).message ?? "Failed", "error");
+    }
+  }
+
+  // Ticket prefix for human ids (PREFIX-NNNN). Applied on Save (free text, so
+  // not on every keystroke). Not behind the name/URL confirm gate — changing
+  // it only relabels display ids, it never renumbers existing tickets.
+  async function saveTicketPrefix() {
+    const next = prefix.trim();
+    if (next === (project.ticket_prefix ?? "")) return;
+    try {
+      await api.updateProject(project.id, { ticket_prefix: next });
+      onSaved();
+      toast("Ticket prefix updated", "success");
     } catch (e) {
       toast((e as ApiClientError).message ?? "Failed", "error");
     }
@@ -393,6 +409,23 @@ function ProjectSection({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="w-40 text-fg-subtle">Ticket prefix</span>
+            <input
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value)}
+              onBlur={saveTicketPrefix}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="PM"
+              aria-label="Ticket prefix"
+              className="w-24 rounded border border-border bg-bg-card px-2 py-1 text-sm outline-none"
+            />
+            <span className="text-xs text-fg-subtle">
+              Human ticket ids look like {(prefix.trim() || "PM")}-0001. 2–100 chars, no spaces.
+            </span>
           </div>
         </div>
       )}

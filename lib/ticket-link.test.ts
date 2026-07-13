@@ -21,6 +21,8 @@ const t = (id: string): Task => ({
   updated_at: "",
   deleted_at: null,
   archived_at: null,
+  ticket_number: null,
+  ticket_key: null,
   creator_id: null,
   assignee_id: null,
   creator_username: null,

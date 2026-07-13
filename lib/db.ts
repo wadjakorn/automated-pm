@@ -135,6 +135,13 @@ function migrate(db: Database.Database) {
   if (!taskCols.has("archived_at")) {
     db.exec("ALTER TABLE tasks ADD COLUMN archived_at TEXT");
   }
+  // Human-readable ticket number: a per-project incrementing counter that,
+  // paired with projects.ticket_prefix, forms a Jira-style id (e.g. PM-0001).
+  // Nullable + no default → pre-migration tickets stay NULL and keep showing
+  // their nanoid (NO backfill). Only tickets created after this ships get one.
+  if (!taskCols.has("ticket_number")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN ticket_number INTEGER");
+  }
 
   // Hidden: hide a status column from the WEB board only (project-level view
   // preference — every viewer sees the same board). Tasks in a hidden status
@@ -171,6 +178,13 @@ function migrate(db: Database.Database) {
   }
   if (!projectCols.has("theme_accent")) {
     db.exec("ALTER TABLE projects ADD COLUMN theme_accent TEXT");
+  }
+  // Ticket prefix: the per-project string prepended to a ticket_number to make
+  // a human id (PREFIX-NNNN). New projects get a random 2-char default at
+  // create time; existing projects stay NULL (their new tasks fall back to the
+  // nanoid) until a prefix is set in Settings. Editable, no backfill of ids.
+  if (!projectCols.has("ticket_prefix")) {
+    db.exec("ALTER TABLE projects ADD COLUMN ticket_prefix TEXT");
   }
 
   // Project names are unique among live (non-deleted) projects, so `--project`

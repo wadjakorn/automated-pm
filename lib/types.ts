@@ -16,6 +16,10 @@ export interface Project {
   // separate per-browser preference and is not stored on the project.
   theme_pack: string | null;
   theme_accent: string | null;
+  // Prefix for human-readable ticket ids (PREFIX-NNNN). New projects get a
+  // random 2-char default; null on pre-migration projects until set in
+  // Settings. 2–100 chars, no whitespace when set.
+  ticket_prefix: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -55,6 +59,12 @@ export interface Task {
   // Archived = filed away off the board, but still live (direct link + search
   // find it). Independent of deleted_at (Trash). Null = not archived.
   archived_at: string | null;
+  // Per-project incrementing counter (stored). Null for pre-migration tickets.
+  ticket_number: number | null;
+  // Derived (NOT stored): PREFIX-NNNN for display, computed from the project's
+  // ticket_prefix + ticket_number at read time. Null when either is missing,
+  // in which case the UI falls back to the nanoid `id`.
+  ticket_key: string | null;
   // Attribution (nullable, backward compat). *_username are joined for display
   // and are not stored columns.
   creator_id: string | null;

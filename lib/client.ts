@@ -54,6 +54,8 @@ export const api = {
       // Per-project theme (web UI); null/"" clears (→ default pack/accent).
       theme_pack?: string | null;
       theme_accent?: string | null;
+      // Prefix for human ticket ids (PREFIX-NNNN); 2–100 chars, no whitespace.
+      ticket_prefix?: string | null;
       // Required by the server when name or remote_repo_url changes.
       confirm?: boolean;
     }
