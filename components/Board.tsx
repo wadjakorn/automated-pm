@@ -17,7 +17,7 @@ import { priorityOrder } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { useProjects, usePoll, useUsers, useTaskRoute } from "./useApp";
 import { resolveTicketAction } from "@/lib/ticket-link";
-import { Nav } from "./Nav";
+import { AppShell } from "./AppShell";
 import { TaskCard } from "./TaskCard";
 import { EditDrawer } from "./EditDrawer";
 import { BoardSkeleton } from "./ui";
@@ -283,54 +283,55 @@ export function Board() {
       );
 
   return (
-    <div className="flex h-screen flex-col">
-      <Nav
+    <>
+      <AppShell
         projects={projects}
         selectedId={selectedId}
-        onSelect={select}
-        onProjectsChanged={reload}
-      />
-
-      {!selectedId ? (
-        loaded ? (
-          <div className="flex flex-1 items-center justify-center text-fg-subtle">
-            Create a project to begin.
-          </div>
-        ) : (
+        select={select}
+        reload={reload}
+        contentClassName="flex min-h-0 flex-1 flex-col"
+      >
+        {!selectedId ? (
+          loaded ? (
+            <div className="flex flex-1 items-center justify-center text-fg-subtle">
+              Create a project to begin.
+            </div>
+          ) : (
+            <BoardSkeleton />
+          )
+        ) : !sm ? (
           <BoardSkeleton />
-        )
-      ) : !sm ? (
-        <BoardSkeleton />
-      ) : (
-        <DndContext
-          sensors={sensors}
-          accessibility={{ announcements: dndAnnouncements }}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-          onDragCancel={() => {
-            setDragging(false);
-            setActive(null);
-          }}
-        >
-          <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 sm:p-4">
-            {sm?.statuses.filter((s) => !s.hidden).map((s) => (
-              <Column
-                key={s.key}
-                statusKey={s.key}
-                label={s.label}
-                isFinal={s.is_final}
-                tasks={byStatus(s.key)}
-                onOpen={(t) => openTask(t.id)}
-                onAdd={addTask}
-                onArchiveAll={archiveAll}
-              />
-            ))}
-          </div>
-          <DragOverlay>
-            {active ? <TaskCard task={active} overlay /> : null}
-          </DragOverlay>
-        </DndContext>
-      )}
+        ) : (
+          <DndContext
+            sensors={sensors}
+            accessibility={{ announcements: dndAnnouncements }}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDragCancel={() => {
+              setDragging(false);
+              setActive(null);
+            }}
+          >
+            <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 sm:p-4">
+              {sm?.statuses.filter((s) => !s.hidden).map((s) => (
+                <Column
+                  key={s.key}
+                  statusKey={s.key}
+                  label={s.label}
+                  isFinal={s.is_final}
+                  tasks={byStatus(s.key)}
+                  onOpen={(t) => openTask(t.id)}
+                  onAdd={addTask}
+                  onArchiveAll={archiveAll}
+                />
+              ))}
+            </div>
+            <DragOverlay>
+              {active ? <TaskCard task={active} overlay /> : null}
+            </DragOverlay>
+          </DndContext>
+        )}
+      </AppShell>
 
       {editing && sm && sm.statuses[0]?.project_id === editing.project_id && (
         <EditDrawer
@@ -342,6 +343,6 @@ export function Board() {
           onOpenTask={openTask}
         />
       )}
-    </div>
+    </>
   );
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Task } from "@/lib/types";
 import { api, ApiClientError } from "@/lib/client";
 import { useProjects } from "./useApp";
-import { Nav } from "./Nav";
+import { AppShell } from "./AppShell";
 import { ListSkeleton } from "./ui";
 import { toast } from "./Toast";
 
@@ -38,14 +38,13 @@ export function Trash() {
   }
 
   return (
-    <div className="flex h-screen flex-col">
-      <Nav
-        projects={projects}
-        selectedId={selectedId}
-        onSelect={select}
-        onProjectsChanged={reload}
-      />
-      <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto p-4 sm:p-6">
+    <AppShell
+      projects={projects}
+      selectedId={selectedId}
+      select={select}
+      reload={reload}
+    >
+      <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         <h2 className="mb-4 text-lg font-semibold text-fg">Trash</h2>
         {!selectedId ? (
           loaded ? (
@@ -82,6 +81,6 @@ export function Trash() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

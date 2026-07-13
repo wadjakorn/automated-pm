@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { useAuth } from "./useApp";
@@ -10,26 +10,21 @@ import { toast } from "./Toast";
 import { useTheme } from "./ThemeProvider";
 import { isAccentChoice, isThemePack, nextChoice } from "./theme";
 
-// Top bar: project switcher + create + nav links. Selected project is carried
-// in the ?project= query string so it survives navigation across pages.
+// Top bar: page nav links + theme toggle + auth. The project switcher and
+// "+ New project" live in the left <Sidebar> now. The selected project is
+// carried in the ?project= query string so it survives navigation across pages.
 export function Nav({
   projects,
   selectedId,
-  onSelect,
-  onProjectsChanged,
 }: {
   projects: Project[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
-  onProjectsChanged: () => void;
 }) {
   const pathname = usePathname();
   const { user, refresh } = useAuth();
   const { choice, setChoice, resolved, setPack, setAccent } = useTheme();
   const themeIcon = resolved === "dark" ? "🌙" : "☀️";
   const themeLabel = `Theme: ${choice}`;
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState("");
 
   // Apply the selected project's theme pack + accent (persisted server-side, so
   // it follows the project across devices). Runs on selection and whenever the
@@ -93,69 +88,9 @@ export function Nav({
     );
   };
 
-  async function create() {
-    if (!name.trim()) return;
-    try {
-      const p = await api.createProject(name.trim());
-      setName("");
-      setCreating(false);
-      onProjectsChanged();
-      onSelect(p.id);
-      toast(`Project "${p.name}" created`, "success");
-    } catch (e: any) {
-      toast(e.message ?? "Failed to create project", "error");
-    }
-  }
-
   return (
     <header className="theme-nav flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:gap-4 sm:px-5 sm:py-3">
       <span className="font-semibold text-fg">📋 PM</span>
-
-      <select
-        value={selectedId ?? ""}
-        onChange={(e) => onSelect(e.target.value)}
-        aria-label="Select project"
-        className="max-w-[40vw] rounded border border-border bg-bg-card px-2 py-1.5 text-sm text-fg outline-none focus:border-accent sm:max-w-none"
-      >
-        {projects.length === 0 && <option value="">No projects</option>}
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-
-      {creating ? (
-        <div className="flex items-center gap-2">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && create()}
-            placeholder="Project name"
-            className="rounded border border-border bg-bg-card px-2 py-1.5 text-sm outline-none"
-          />
-          <button
-            onClick={create}
-            className="rounded bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
-          >
-            Add
-          </button>
-          <button
-            onClick={() => setCreating(false)}
-            className="text-sm text-fg-muted hover:text-fg"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => setCreating(true)}
-          className="rounded border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-card"
-        >
-          + New project
-        </button>
-      )}
 
       <nav className="ml-auto flex flex-wrap items-center gap-1">
         {link("/", "Board")}
