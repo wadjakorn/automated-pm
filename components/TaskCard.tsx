@@ -79,7 +79,7 @@ export function TaskCard({
         )}
         {overlay ? (
           <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
-            {task.id}
+            {task.ticket_key ?? task.id}
           </span>
         ) : (
           <button
@@ -94,7 +94,7 @@ export function TaskCard({
             title="Copy link to this ticket"
             className="shrink-0 rounded font-mono text-[10px] text-fg-subtle hover:text-fg-muted"
           >
-            {task.id}
+            {task.ticket_key ?? task.id}
           </button>
         )}
       </div>

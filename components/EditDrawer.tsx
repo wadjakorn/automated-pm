@@ -251,7 +251,7 @@ export function EditDrawer({
               className="font-mono text-xs text-fg-muted hover:text-fg"
               title="Copy link to this ticket"
             >
-              🔗 {task.id}
+              🔗 {task.ticket_key ?? task.id}
             </button>
             <button
               onClick={requestClose}

@@ -1,4 +1,4 @@
-import { nanoid } from "nanoid";
+import { customAlphabet, nanoid } from "nanoid";
 import { getDb } from "./db";
 import { buildDefaultStateMachine, canTransition } from "./statemachine";
 import { badRequest, conflict, illegalTransition, notFound, unauthorized } from "./api-errors";
@@ -39,9 +39,40 @@ const PRIORITY_ORDER_SQL =
 const now = () => new Date().toISOString();
 const id = () => nanoid(12);
 
+// Random default ticket prefix for a new project: 2 uppercase letters (Jira-like).
+const genTicketPrefix = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 2);
+
+// Validate/normalize a ticket prefix: trimmed, 2–100 chars, no whitespace.
+function normTicketPrefix(v: unknown): string {
+  if (typeof v !== "string") throw badRequest("ticket prefix must be a string");
+  const s = v.trim();
+  if (s.length < 2 || s.length > 100)
+    throw badRequest("ticket prefix must be 2–100 characters");
+  if (/\s/.test(s)) throw badRequest("ticket prefix cannot contain whitespace");
+  return s;
+}
+
+// Human-readable id from a project prefix + per-project number, zero-padded to
+// at least 4 digits (grows past 4 when the number is larger).
+function formatTicketKey(prefix: string, num: number): string {
+  return `${prefix}-${String(num).padStart(4, "0")}`;
+}
+
 // ---- row mappers (SQLite stores booleans as 0/1) ----
 function mapStatus(r: any): Status {
   return { ...r, is_final: !!r.is_final, hidden: !!r.hidden };
+}
+
+// Map a task row (from TASK_SELECT) to the Task shape: derive the display
+// ticket_key from the joined project prefix + stored ticket_number, and drop
+// the join-only helper column. Null key → UI falls back to the nanoid id.
+function mapTask(r: any): Task {
+  const { project_ticket_prefix, ...rest } = r;
+  const ticket_key =
+    project_ticket_prefix != null && rest.ticket_number != null
+      ? formatTicketKey(project_ticket_prefix, rest.ticket_number)
+      : null;
+  return { ...rest, ticket_key } as Task;
 }
 
 const publicUser = (u: User): PublicUser => ({
@@ -140,10 +171,12 @@ export function createProject(name: string, description?: string): Project {
   const ts = now();
   const sm = buildDefaultStateMachine(pid);
 
+  const ticketPrefix = genTicketPrefix();
+
   const tx = db.transaction(() => {
     db.prepare(
-      "INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?,?,?,?,?)"
-    ).run(pid, trimmed, description ?? null, ts, ts);
+      "INSERT INTO projects (id, name, description, ticket_prefix, created_at, updated_at) VALUES (?,?,?,?,?,?)"
+    ).run(pid, trimmed, description ?? null, ticketPrefix, ts, ts);
 
     const insStatus = db.prepare(
       "INSERT INTO statuses (id, project_id, key, label, sort_order, is_final) VALUES (?,?,?,?,?,?)"
@@ -176,6 +209,10 @@ export function updateProject(
     // guarded field — theme is cosmetic, not identity/safety.
     theme_pack?: string | null;
     theme_accent?: string | null;
+    // Prefix for human ticket ids (PREFIX-NNNN). undefined = leave as-is; a set
+    // value is validated (2–100 chars, no whitespace). Not a guarded field —
+    // changing it only relabels display ids, it doesn't renumber anything.
+    ticket_prefix?: string | null;
     // Guard: changing name or remote_repo_url is a sensitive edit (the name is
     // an identifier; the URL is what agents act on). Require an explicit
     // confirm so neither a human nor an agent changes them by accident.
@@ -208,6 +245,12 @@ export function updateProject(
       : patch.theme_accent === null || patch.theme_accent === ""
         ? null
         : patch.theme_accent;
+  // A prefix always exists once set: undefined leaves it; null/"" is rejected
+  // by normTicketPrefix rather than clearing (there is no "no prefix" state).
+  const ticketPrefix =
+    patch.ticket_prefix === undefined
+      ? p.ticket_prefix
+      : normTicketPrefix(patch.ticket_prefix);
 
   const nameChanged = name !== p.name;
   const urlChanged = remoteRepoUrl !== p.remote_repo_url;
@@ -242,9 +285,9 @@ export function updateProject(
   }
   getDb()
     .prepare(
-      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, theme_pack=?, theme_accent=?, updated_at=? WHERE id=?"
+      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, theme_pack=?, theme_accent=?, ticket_prefix=?, updated_at=? WHERE id=?"
     )
-    .run(name, description, remoteRepoUrl, defaultStatusKey, themePack, themeAccent, now(), p.id);
+    .run(name, description, remoteRepoUrl, defaultStatusKey, themePack, themeAccent, ticketPrefix, now(), p.id);
   return getProject(p.id);
 }
 
@@ -373,10 +416,12 @@ export function removeTransition(
 // Tasks always carry joined creator/assignee usernames for display. WHERE
 // clauses must qualify columns with `t.` since users also has `id`.
 const TASK_SELECT = `
-  SELECT t.*, cu.username AS creator_username, au.username AS assignee_username
+  SELECT t.*, cu.username AS creator_username, au.username AS assignee_username,
+         p.ticket_prefix AS project_ticket_prefix
   FROM tasks t
   LEFT JOIN users cu ON cu.id = t.creator_id
-  LEFT JOIN users au ON au.id = t.assignee_id`;
+  LEFT JOIN users au ON au.id = t.assignee_id
+  LEFT JOIN projects p ON p.id = t.project_id`;
 
 function nextRank(projectId: string, statusKey: string): number {
   const max = (getDb()
@@ -416,11 +461,13 @@ export function listTasks(
     params.push(normPriority(opts.priority, DEFAULT_PRIORITY));
   }
   // Within a status column tasks sort by priority (now→low), then rank.
-  return getDb()
-    .prepare(
-      `${TASK_SELECT} WHERE ${clauses.join(" AND ")} ORDER BY t.status_key, ${PRIORITY_ORDER_SQL}, t.rank`
-    )
-    .all(...params) as Task[];
+  return (
+    getDb()
+      .prepare(
+        `${TASK_SELECT} WHERE ${clauses.join(" AND ")} ORDER BY t.status_key, ${PRIORITY_ORDER_SQL}, t.rank`
+      )
+      .all(...params) as any[]
+  ).map(mapTask);
 }
 
 // cc-bridge poll: the ready-work queue. One row per ticket in the ready status
@@ -474,9 +521,9 @@ export function getTask(taskId: string, includeDeleted = false): Task {
     .prepare(
       `${TASK_SELECT} WHERE t.id=? ${includeDeleted ? "" : "AND t.deleted_at IS NULL"}`
     )
-    .get(taskId) as Task | undefined;
+    .get(taskId) as any;
   if (!t) throw notFound("task");
-  return t;
+  return mapTask(t);
 }
 
 export function createTask(
@@ -511,11 +558,20 @@ export function createTask(
   const priority = normPriority(data.priority, DEFAULT_PRIORITY);
   const tid = id();
   const ts = now();
-  getDb()
-    .prepare(
-      "INSERT INTO tasks (id, project_id, title, description, status_key, priority, rank, version, created_at, updated_at, creator_id, assignee_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
-    )
-    .run(
+  const db = getDb();
+  // Wrap the ticket_number read-max-then-insert in a transaction so concurrent
+  // creates in the same project can't hand out a duplicate number (the bare
+  // INSERT used to race). nextRank is read inside the tx for the same reason.
+  const insert = db.transaction(() => {
+    const maxNum = (
+      db
+        .prepare("SELECT MAX(ticket_number) m FROM tasks WHERE project_id=?")
+        .get(projectId) as any
+    ).m;
+    const ticketNumber = (maxNum ?? 0) + 1;
+    db.prepare(
+      "INSERT INTO tasks (id, project_id, title, description, status_key, priority, rank, version, created_at, updated_at, creator_id, assignee_id, ticket_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(
       tid,
       projectId,
       data.title.trim(),
@@ -527,8 +583,11 @@ export function createTask(
       ts,
       ts,
       data.creatorId ?? null,
-      assigneeId
+      assigneeId,
+      ticketNumber
     );
+  });
+  insert();
   return getTask(tid);
 }
 
