@@ -4,8 +4,16 @@ import { createProject, listProjects } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return handle(() => listProjects());
+// GET /api/projects[?includeArchived=true&includeDeleted=true]. Default returns
+// the live sidebar list (hidden projects included; the sidebar filters them).
+export function GET(req: NextRequest) {
+  return handle(() => {
+    const sp = new URL(req.url).searchParams;
+    return listProjects({
+      includeArchived: sp.get("includeArchived") === "true",
+      includeDeleted: sp.get("includeDeleted") === "true",
+    });
+  });
 }
 
 export function POST(req: NextRequest) {

@@ -132,23 +132,38 @@ export function listUsers(): PublicUser[] {
 
 // ---------------- Projects ----------------
 
-export function listProjects(): Project[] {
+// Live projects for the sidebar, ordered by the user-controlled sort_order.
+// Hidden projects are ALWAYS returned (the sidebar filters them behind a "Show
+// hidden" toggle, mirroring how hidden-status tasks stay listed). Archived and
+// deleted projects are excluded unless explicitly requested (Archive / Trash).
+export function listProjects(
+  opts: { includeArchived?: boolean; includeDeleted?: boolean } = {}
+): Project[] {
+  const where: string[] = [];
+  if (!opts.includeDeleted) where.push("deleted_at IS NULL");
+  if (!opts.includeArchived) where.push("archived_at IS NULL");
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
   return getDb()
-    .prepare("SELECT * FROM projects WHERE deleted_at IS NULL ORDER BY created_at")
+    .prepare(
+      `SELECT * FROM projects ${clause} ORDER BY sort_order IS NULL, sort_order, created_at`
+    )
     .all() as Project[];
 }
 
 // Resolve a project by its id OR its (unique) name. Id is tried first so an
 // id can never be shadowed by a name; names are unique among live projects
 // (enforced in createProject/updateProject + a partial unique index).
-export function getProject(ref: string): Project {
+// Archived (but not deleted) projects resolve normally, so their direct links
+// keep working; pass includeDeleted to reach a trashed project (for restore).
+export function getProject(ref: string, includeDeleted = false): Project {
   const db = getDb();
+  const del = includeDeleted ? "" : " AND deleted_at IS NULL";
   const byId = db
-    .prepare("SELECT * FROM projects WHERE id = ? AND deleted_at IS NULL")
+    .prepare(`SELECT * FROM projects WHERE id = ?${del}`)
     .get(ref) as Project | undefined;
   if (byId) return byId;
   const byName = db
-    .prepare("SELECT * FROM projects WHERE name = ? AND deleted_at IS NULL")
+    .prepare(`SELECT * FROM projects WHERE name = ?${del}`)
     .get(ref) as Project | undefined;
   if (!byName) throw notFound("project");
   return byName;
@@ -173,10 +188,16 @@ export function createProject(name: string, description?: string): Project {
 
   const ticketPrefix = genTicketPrefix();
 
+  // New projects sort after every existing one (including archived/deleted, so
+  // a restore/unarchive keeps a stable slot).
+  const nextOrder =
+    ((db.prepare("SELECT MAX(sort_order) m FROM projects").get() as { m: number | null }).m ??
+      0) + 1;
+
   const tx = db.transaction(() => {
     db.prepare(
-      "INSERT INTO projects (id, name, description, ticket_prefix, created_at, updated_at) VALUES (?,?,?,?,?,?)"
-    ).run(pid, trimmed, description ?? null, ticketPrefix, ts, ts);
+      "INSERT INTO projects (id, name, description, ticket_prefix, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?)"
+    ).run(pid, trimmed, description ?? null, ticketPrefix, nextOrder, ts, ts);
 
     const insStatus = db.prepare(
       "INSERT INTO statuses (id, project_id, key, label, sort_order, is_final) VALUES (?,?,?,?,?,?)"
@@ -213,6 +234,9 @@ export function updateProject(
     // value is validated (2–100 chars, no whitespace). Not a guarded field —
     // changing it only relabels display ids, it doesn't renumber anything.
     ticket_prefix?: string | null;
+    // Hide/show the project in the web sidebar. undefined = leave as-is. Not a
+    // guarded field — it is a cosmetic view preference, not identity/safety.
+    hidden?: boolean;
     // Guard: changing name or remote_repo_url is a sensitive edit (the name is
     // an identifier; the URL is what agents act on). Require an explicit
     // confirm so neither a human nor an agent changes them by accident.
@@ -251,6 +275,7 @@ export function updateProject(
     patch.ticket_prefix === undefined
       ? p.ticket_prefix
       : normTicketPrefix(patch.ticket_prefix);
+  const hidden = patch.hidden === undefined ? p.hidden : patch.hidden;
 
   const nameChanged = name !== p.name;
   const urlChanged = remoteRepoUrl !== p.remote_repo_url;
@@ -285,9 +310,9 @@ export function updateProject(
   }
   getDb()
     .prepare(
-      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, theme_pack=?, theme_accent=?, ticket_prefix=?, updated_at=? WHERE id=?"
+      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, theme_pack=?, theme_accent=?, ticket_prefix=?, hidden=?, updated_at=? WHERE id=?"
     )
-    .run(name, description, remoteRepoUrl, defaultStatusKey, themePack, themeAccent, ticketPrefix, now(), p.id);
+    .run(name, description, remoteRepoUrl, defaultStatusKey, themePack, themeAccent, ticketPrefix, hidden ? 1 : 0, now(), p.id);
   return getProject(p.id);
 }
 
@@ -297,6 +322,61 @@ export function softDeleteProject(projectId: string): { ok: true } {
     .prepare("UPDATE projects SET deleted_at=?, updated_at=? WHERE id=?")
     .run(now(), now(), projectId);
   return { ok: true };
+}
+
+// Bring a trashed project back onto the sidebar. Idempotent for a live one.
+export function restoreProject(projectId: string): Project {
+  const p = getProject(projectId, true);
+  if (!p.deleted_at) return p;
+  // A live project must still own its (unique) name — a same-name project may
+  // have been created while this one sat in the trash.
+  const clash = getDb()
+    .prepare("SELECT 1 FROM projects WHERE name=? AND id!=? AND deleted_at IS NULL")
+    .get(p.name, p.id);
+  if (clash)
+    throw badRequest(
+      `cannot restore "${p.name}": another live project already uses that name`
+    );
+  getDb()
+    .prepare("UPDATE projects SET deleted_at=NULL, updated_at=? WHERE id=?")
+    .run(now(), p.id);
+  return getProject(p.id);
+}
+
+// Archive: file the project off the sidebar while it stays live (openable by
+// id). Independent of soft delete. Idempotent.
+export function archiveProject(projectId: string): Project {
+  const p = getProject(projectId);
+  if (p.archived_at) return p;
+  getDb()
+    .prepare("UPDATE projects SET archived_at=?, updated_at=? WHERE id=?")
+    .run(now(), now(), p.id);
+  return getProject(p.id);
+}
+
+export function unarchiveProject(projectId: string): Project {
+  const p = getProject(projectId);
+  if (!p.archived_at) return p;
+  getDb()
+    .prepare("UPDATE projects SET archived_at=NULL, updated_at=? WHERE id=?")
+    .run(now(), p.id);
+  return getProject(p.id);
+}
+
+// Persist a new sidebar order. `orderedIds` is the full ordered list of live
+// project ids; each is written sort_order = its index. Unknown/deleted ids are
+// no-ops. Returns the freshly ordered live list.
+export function reorderProjects(orderedIds: string[]): Project[] {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    const ts = now();
+    const upd = db.prepare(
+      "UPDATE projects SET sort_order=?, updated_at=? WHERE id=? AND deleted_at IS NULL"
+    );
+    orderedIds.forEach((pid, i) => upd.run(i + 1, ts, pid));
+  });
+  tx();
+  return listProjects({ includeArchived: true });
 }
 
 // ---------------- State machine ----------------

@@ -186,6 +186,30 @@ function migrate(db: Database.Database) {
   if (!projectCols.has("ticket_prefix")) {
     db.exec("ALTER TABLE projects ADD COLUMN ticket_prefix TEXT");
   }
+  // Sidebar ordering: a user-controlled integer. Added nullable (SQLite can't
+  // ADD a NOT NULL column without a constant default), then backfilled by
+  // created_at so the initial order matches the old ORDER BY created_at. New
+  // projects get MAX+1 at insert time (see createProject).
+  if (!projectCols.has("sort_order")) {
+    db.exec("ALTER TABLE projects ADD COLUMN sort_order INTEGER");
+    db.exec(
+      `UPDATE projects SET sort_order = (
+         SELECT COUNT(*) FROM projects p2
+         WHERE p2.created_at < projects.created_at
+            OR (p2.created_at = projects.created_at AND p2.id <= projects.id)
+       ) WHERE sort_order IS NULL`
+    );
+  }
+  // Hide a project from the WEB sidebar only (mirrors statuses.hidden). INTEGER
+  // with a literal default so old rows migrate to 0 (not hidden).
+  if (!projectCols.has("hidden")) {
+    db.exec("ALTER TABLE projects ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
+  }
+  // Archive: file a project off the sidebar while keeping it live (mirrors
+  // tasks.archived_at). Nullable, no default → old rows stay un-archived.
+  if (!projectCols.has("archived_at")) {
+    db.exec("ALTER TABLE projects ADD COLUMN archived_at TEXT");
+  }
 
   // Project names are unique among live (non-deleted) projects, so `--project`
   // can take a name instead of an id. Partial index ignores soft-deleted rows,
