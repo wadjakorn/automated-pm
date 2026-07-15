@@ -36,11 +36,16 @@ const json = (d: unknown) => JSON.stringify(d, null, 2);
 
 function renderProjects(list: any[]): string {
   if (!list.length) return "(no projects)";
+  const state = (p: any) =>
+    [p.deleted_at ? "deleted" : "", p.archived_at ? "archived" : "", p.hidden ? "hidden" : ""]
+      .filter(Boolean)
+      .join(",");
   return table(
-    ["ID", "NAME", "REMOTE", "CREATED"],
+    ["ID", "NAME", "STATE", "REMOTE", "CREATED"],
     list.map((p) => [
       p.id,
       p.name,
+      state(p),
       p.remote_repo_url ?? "",
       String(p.created_at ?? "").slice(0, 10),
     ])

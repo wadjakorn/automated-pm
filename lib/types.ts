@@ -20,9 +20,19 @@ export interface Project {
   // random 2-char default; null on pre-migration projects until set in
   // Settings. 2–100 chars, no whitespace when set.
   ticket_prefix: string | null;
+  // Sidebar ordering: a per-project integer the user controls (up/down in the
+  // sidebar). Backfilled by created_at on migration; new projects get MAX+1.
+  sort_order: number;
+  // Hide this project from the WEB sidebar only (view preference, mirrors
+  // Status.hidden). Hidden projects stay live, listed by the API, and reachable
+  // by direct URL — the sidebar just filters them behind a "Show hidden" toggle.
+  hidden: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  // Filed off the sidebar but still live (openable by id), mirroring
+  // Task.archived_at. Independent of deleted_at (Trash). Null = not archived.
+  archived_at: string | null;
 }
 
 export interface Status {

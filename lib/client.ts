@@ -40,7 +40,13 @@ export const api = {
   listUsers: () => req<PublicUser[]>("GET", "/api/users"),
 
   // projects
-  listProjects: () => req<Project[]>("GET", "/api/projects"),
+  listProjects: (opts?: { includeArchived?: boolean; includeDeleted?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (opts?.includeArchived) qs.set("includeArchived", "true");
+    if (opts?.includeDeleted) qs.set("includeDeleted", "true");
+    const q = qs.toString();
+    return req<Project[]>("GET", `/api/projects${q ? `?${q}` : ""}`);
+  },
   createProject: (name: string, description?: string) =>
     req<Project>("POST", "/api/projects", { name, description }),
   updateProject: (
@@ -56,11 +62,19 @@ export const api = {
       theme_accent?: string | null;
       // Prefix for human ticket ids (PREFIX-NNNN); 2–100 chars, no whitespace.
       ticket_prefix?: string | null;
+      // Hide/show the project in the web sidebar (cosmetic view preference).
+      hidden?: boolean;
       // Required by the server when name or remote_repo_url changes.
       confirm?: boolean;
     }
   ) => req<Project>("PATCH", `/api/projects/${id}`, patch),
   deleteProject: (id: string) => req<{ ok: true }>("DELETE", `/api/projects/${id}`),
+  restoreProject: (id: string) => req<Project>("POST", `/api/projects/${id}/restore`),
+  archiveProject: (id: string) => req<Project>("POST", `/api/projects/${id}/archive`),
+  unarchiveProject: (id: string) =>
+    req<Project>("POST", `/api/projects/${id}/unarchive`),
+  reorderProjects: (ids: string[]) =>
+    req<Project[]>("POST", "/api/projects/reorder", { ids }),
 
   // state machine
   getStateMachine: (projectId: string) =>

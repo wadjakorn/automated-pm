@@ -102,10 +102,14 @@ const HELP = `pm — Project Manager CLI
   pm whoami                                        # current user (needs PM_TOKEN) or null
 
   pm project create --name <name> [--description <text>]
-  pm project list
+  pm project list [--include-archived] [--include-deleted]
   # changing --name or --remote-url is a guarded edit: it needs --confirm.
-  pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--confirm]
+  pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--hidden <true|false>] [--confirm]
   pm project delete --project <id|name>
+  pm project restore --project <id|name>              # bring a trashed project back
+  pm project archive --project <id|name>              # file off the sidebar (stays live)
+  pm project unarchive --project <id|name>
+  pm project reorder --ids <id1,id2,...>              # persist a new sidebar order
 
   # --project accepts a project id OR its (unique) name, e.g. --project 'demo'
   pm status list --project <id|name>
@@ -264,8 +268,13 @@ async function main() {
           description: f.description,
         })
       );
-    case "project list":
-      return emit("projects", await api("GET", "/api/projects"));
+    case "project list": {
+      const qs = new URLSearchParams();
+      if (f["include-archived"]) qs.set("includeArchived", "true");
+      if (f["include-deleted"]) qs.set("includeDeleted", "true");
+      const q = qs.toString() ? `?${qs.toString()}` : "";
+      return emit("projects", await api("GET", `/api/projects${q}`));
+    }
     case "project update":
       return emit(
         "project",
@@ -278,12 +287,32 @@ async function main() {
           // --default-status '' clears it (→ first status); server validates key.
           default_status_key:
             typeof f["default-status"] === "string" ? f["default-status"] : undefined,
+          // --hidden true|false hides/shows the project in the web sidebar.
+          hidden:
+            f.hidden === undefined ? undefined : f.hidden === "true" || f.hidden === true,
           // Guard: the server rejects a name/URL change unless confirm is true.
           confirm: f.confirm === true,
         })
       );
     case "project delete":
       return emit("ok", await api("DELETE", `/api/projects/${proj(f)}`));
+    case "project restore":
+      return emit("project", await api("POST", `/api/projects/${proj(f)}/restore`));
+    case "project archive":
+      return emit("project", await api("POST", `/api/projects/${proj(f)}/archive`));
+    case "project unarchive":
+      return emit("project", await api("POST", `/api/projects/${proj(f)}/unarchive`));
+    case "project reorder":
+      // --ids is a comma-separated ordered list of project ids.
+      return emit(
+        "projects",
+        await api("POST", "/api/projects/reorder", {
+          ids: need(f, "ids")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        })
+      );
 
     case "status list":
       return emit("statemachine", await api("GET", `/api/projects/${proj(f)}/statuses`));
