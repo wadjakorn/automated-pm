@@ -29,7 +29,7 @@ export function TaskCard({
   // Stops propagation so it neither opens the card nor starts a drag.
   const copyIdLink = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const link = shareLink(window.location.origin, task.id);
+    const link = shareLink(window.location.origin, task);
     if (await copyText(link)) {
       toast("Link copied", "success");
     } else {

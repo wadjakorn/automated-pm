@@ -127,23 +127,24 @@ const HELP = `pm — Project Manager CLI
   # aliases: \`ls\`=list, \`mv\`=move, \`rm\`=delete (e.g. pm task ls --project demo)
   # task list auto-sorts each status by priority (now→high→medium→low), then rank
   pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <p>]
-  pm task get --id <id> [--include-deleted]   # fetch one task directly by id
-  pm task move --id <id> --status <key> [--version <n>]
-  pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <p>]
-  pm task delete --id <id>
-  pm task restore --id <id>
+  # every --id below accepts the nanoid OR the human ticket key (e.g. PM-0002)
+  pm task get --id <id|key> [--include-deleted]   # fetch one task directly
+  pm task move --id <id|key> --status <key> [--version <n>]
+  pm task update --id <id|key> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <p>]
+  pm task delete --id <id|key>
+  pm task restore --id <id|key>
 
   # archive — file finished tickets off the board (stay live: direct link + search).
   # only tickets in a FINAL status can be archived. archive-final does it in bulk.
-  pm task archive --id <id>
-  pm task unarchive --id <id>
+  pm task archive --id <id|key>
+  pm task unarchive --id <id|key>
   pm task archive-final --project <id|name> --status <final-key>
 
-  # ticket links — --to accepts a ticket URL or bare id; --type is one of
-  # blocks | blocked-by | causes | caused-by | relates
-  pm task link add  --id <id> --to <url|id> --type <type>
-  pm task link list --id <id>
-  pm task link rm   --id <id> --link <linkId>
+  # ticket links — --to accepts a ticket URL, bare id, or ticket key; --type is
+  # one of blocks | blocked-by | causes | caused-by | relates
+  pm task link add  --id <id|key> --to <url|id|key> --type <type>
+  pm task link list --id <id|key>
+  pm task link rm   --id <id|key> --link <linkId>
 
   pm board --project <id|name>          # columns view: tasks grouped by status
   pm ready [--project <id|name>] [--assignee <id|username>]   # ready tickets (repo + desc) for the poll routine

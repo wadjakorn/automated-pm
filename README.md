@@ -11,6 +11,10 @@ locking, and a JSON **CLI** so an LLM agent can drive the same data the browser 
 - State machine (statuses, transitions, final flags) is **per project** and editable in Settings.
 - Deleting is soft: tasks go to **Trash** and can be restored.
 - Finished tickets in a **final** status can be **archived** (in bulk, per column via "Archive all"): they leave the board but stay live — openable by direct link, searchable (future), and listed under **Archive** to unarchive. Distinct from Trash.
+- Every ticket has a **human key** like `PM-0002` — the project's ticket prefix plus a per-project counter. It works anywhere a task id is accepted: the board URL (`/?task=PM-0002`), the REST API (`GET /api/tasks/PM-0002`), and the CLI (`pm task get --id PM-0002`). The underlying random id keeps working too, so old links never break; opening one rewrites the URL to the key.
+  - Ticket **prefixes are unique across all projects** (case-insensitive), which is what lets a key name exactly one ticket. New projects get a random prefix; you can change it in Settings, and a prefix another project already uses is rejected.
+  - A prefix must start with a letter and hold only letters, digits and underscores, and is stored upper-cased (`pm` → `PM`) — the key ends up in URLs and CLI arguments, so it has to be safe there.
+  - A random id always wins over a key when both could match: ids are drawn from an alphabet that includes `-` and digits, so an old id can coincidentally look like `ABC-00012345`. Resolving the id first is what guarantees old links never break.
 
 ## Run (no extra install for the user)
 
@@ -67,9 +71,9 @@ pm task list --project $PID
 pm task move --id <task id> --status todo
 pm task delete --id <task id>
 pm task restore --id <task id>
-pm task archive --id <task id>                       # file a final-status ticket off the board
+pm task archive --id <task id|ticket key>                       # file a final-status ticket off the board
 pm task archive-final --project $PID --status released   # bulk-archive a whole final column
-pm task link add --id <task id> --to <url|id> --type blocks   # link tickets (Jira-style)
+pm task link add --id <task id|ticket key> --to <url|id|key> --type blocks   # link tickets (Jira-style)
 pm task link list --id <task id>
 pm board --project $PID                              # columns view (tasks by status)
 printf 'task one\ntask two\n' | pm task create --project $PID --stdin   # bulk

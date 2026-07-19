@@ -76,19 +76,20 @@ pm transition remove --project <id|name> --from <key> --to <key>
 
 pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>]
-pm task move --id <id> --status <key> [--version <n>]
-pm task update --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
-pm task delete --id <id>          # soft delete (recoverable)
-pm task restore --id <id>
-pm task archive --id <id>         # final-status only; off the board but stays live
-pm task unarchive --id <id>
+# every --id below takes the nanoid OR the human ticket key (e.g. PM-0002)
+pm task move --id <id|key> --status <key> [--version <n>]
+pm task update --id <id|key> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
+pm task delete --id <id|key>          # soft delete (recoverable)
+pm task restore --id <id|key>
+pm task archive --id <id|key>         # final-status only; off the board but stays live
+pm task unarchive --id <id|key>
 pm task archive-final --project <id|name> --status <final-key>   # bulk-archive a final column
 pm task create --project <id|name> --stdin          # one task per non-empty stdin line
 
-# Ticket links: --to is a ticket URL or bare id; --type = blocks|blocked-by|causes|caused-by|relates
-pm task link add  --id <id> --to <url|id> --type <type>   # link shows in BOTH tickets (inverse label)
-pm task link list --id <id>
-pm task link rm   --id <id> --link <linkId>
+# Ticket links: --to is a ticket URL, bare id, or ticket key; --type = blocks|blocked-by|causes|caused-by|relates
+pm task link add  --id <id|key> --to <url|id|key> --type <type>   # link shows in BOTH tickets (inverse label)
+pm task link list --id <id|key>
+pm task link rm   --id <id|key> --link <linkId>
 
 pm board --project <id|name>                        # columns view: tasks grouped by status
 

@@ -16,7 +16,7 @@ import type { Task, StateMachine } from "@/lib/types";
 import { priorityOrder } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
 import { useProjects, usePoll, useUsers, useTaskRoute } from "./useApp";
-import { resolveTicketAction } from "@/lib/ticket-link";
+import { resolveTicketAction, ticketRef } from "@/lib/ticket-link";
 import { AppShell } from "./AppShell";
 import { TaskCard } from "./TaskCard";
 import { EditDrawer } from "./EditDrawer";
@@ -139,12 +139,12 @@ function Column({
 
 export function Board() {
   const { projects, selectedId, select, reload, loaded } = useProjects();
-  const { taskParam, openTask, closeTask } = useTaskRoute();
+  const { taskParam, openTask, replaceTask, closeTask } = useTaskRoute();
   const resolvingRef = useRef<string | null>(null);
-  const selectRef = useRef(select);
-  selectRef.current = select;
   const closeTaskRef = useRef(closeTask);
   closeTaskRef.current = closeTask;
+  const replaceTaskRef = useRef(replaceTask);
+  replaceTaskRef.current = replaceTask;
   const { users } = useUsers();
   const [sm, setSm] = useState<StateMachine | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -188,7 +188,7 @@ export function Board() {
   // The `task` URL param is the source of truth for the open drawer.
   useEffect(() => {
     if (resolvingRef.current !== null) return; // a deep-link fetch is in flight; don't re-enter
-    const action = resolveTicketAction(taskParam, tasks, editing?.id ?? null);
+    const action = resolveTicketAction(taskParam, tasks, editing ?? null);
     if (action.kind === "noop") return;
     if (action.kind === "close") {
       setEditing(null);
@@ -196,6 +196,11 @@ export function Board() {
     }
     if (action.kind === "open-local") {
       setEditing(action.task);
+      // Canonicalize a legacy `?task=<nanoid>` link to the human key once the
+      // ticket resolves. replace(), not push(), so Back still leaves the board
+      // rather than bouncing between the two spellings of the same URL.
+      const ref = ticketRef(action.task);
+      if (taskParam !== ref) replaceTask(ref);
       return;
     }
     // action.kind === "fetch": deep link to a task not in the loaded list.
@@ -204,8 +209,14 @@ export function Board() {
     api
       .getTask(taskParam)
       .then((t) => {
-        if (t.project_id !== selectedId) selectRef.current(t.project_id);
         setEditing(t);
+        // Canonicalize the link and switch project in ONE url write. Doing the
+        // project switch separately would race this replace, and whichever ran
+        // last would drop the other's param — leaving the board on the wrong
+        // project with the drawer's ticket nowhere in the list.
+        const ref = ticketRef(t);
+        const proj = t.project_id !== selectedId ? t.project_id : undefined;
+        if (taskParam !== ref || proj) replaceTaskRef.current(ref, proj);
       })
       .catch(() => {
         toast("Ticket not found", "error");
@@ -214,7 +225,7 @@ export function Board() {
       .finally(() => {
         resolvingRef.current = null;
       });
-  }, [taskParam, tasks, selectedId, editing]);
+  }, [taskParam, tasks, selectedId, editing, replaceTask]);
 
   function onDragStart(e: DragStartEvent) {
     setDragging(true);
@@ -320,7 +331,7 @@ export function Board() {
                   label={s.label}
                   isFinal={s.is_final}
                   tasks={byStatus(s.key)}
-                  onOpen={(t) => openTask(t.id)}
+                  onOpen={(t) => openTask(ticketRef(t))}
                   onAdd={addTask}
                   onArchiveAll={archiveAll}
                 />

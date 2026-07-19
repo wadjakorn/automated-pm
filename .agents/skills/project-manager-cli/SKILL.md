@@ -115,24 +115,26 @@ pm transition remove --project <id|name> --from <key> --to <key>
 pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task create  --project <id|name> --stdin              # one task per non-empty stdin line
 pm task list    --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>]
-pm task get     --id <id> [--include-deleted]            # fetch ONE task directly by id (no project needed)
-pm task move    --id <id> --status <key> [--version <n>]
-pm task update  --id <id> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
-pm task delete  --id <id>          # soft delete (recoverable)
-pm task restore --id <id>
+# every --id below takes the nanoid OR the human ticket key (e.g. PM-0002),
+# the same string shown on the card and in a copied ticket link.
+pm task get     --id <id|key> [--include-deleted]        # fetch ONE task directly by id (no project needed)
+pm task move    --id <id|key> --status <key> [--version <n>]
+pm task update  --id <id|key> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
+pm task delete  --id <id|key>          # soft delete (recoverable)
+pm task restore --id <id|key>
 
 # Archive: file a FINISHED ticket off the board while it stays live (direct
 # link + future search still find it). Only tickets in a FINAL status can be
 # archived. archive-final does a whole final column at once.
-pm task archive       --id <id>
-pm task unarchive     --id <id>
+pm task archive       --id <id|key>
+pm task unarchive     --id <id|key>
 pm task archive-final --project <id|name> --status <final-key>
 
 # Ticket links: --to accepts a ticket URL or bare id; --type is one of
 # blocks | blocked-by | causes | caused-by | relates (inverse label derived for the other ticket)
-pm task link add  --id <id> --to <url|id> --type <type>
-pm task link list --id <id>
-pm task link rm   --id <id> --link <linkId>
+pm task link add  --id <id|key> --to <url|id|key> --type <type>
+pm task link list --id <id|key>
+pm task link rm   --id <id|key> --link <linkId>
 
 pm board        --project <id|name>                      # columns view: tasks grouped by status
 pm ready        [--project <id|name>] [--assignee <id|username>]   # ready tickets (+repo, +desc) for the poll routine; needs PM_TOKEN
