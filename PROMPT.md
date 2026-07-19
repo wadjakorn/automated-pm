@@ -94,19 +94,20 @@ pm transition add --project <id|name> --from doing --to qa
 pm transition remove --project <id|name> --from doing --to qa
 pm task create --project <id|name> --title "..." [--description ...] [--status backlog] [--priority now]
 pm task list --project <id|name> [--status doing] [--include-deleted] [--include-archived] [--priority high]
-pm task move --id <id> --status doing [--version N]
-pm task update --id <id> [--title ...] [--description ...] [--version N] [--priority high]
-pm task delete --id <id>          # soft
-pm task restore --id <id>
-pm task archive --id <id>         # final-status only; off-board but stays live
-pm task unarchive --id <id>
+# every --id below takes the nanoid OR the human ticket key (e.g. PM-0002)
+pm task move --id <id|key> --status doing [--version N]
+pm task update --id <id|key> [--title ...] [--description ...] [--version N] [--priority high]
+pm task delete --id <id|key>          # soft
+pm task restore --id <id|key>
+pm task archive --id <id|key>         # final-status only; off-board but stays live
+pm task unarchive --id <id|key>
 pm task archive-final --project <id|name> --status <final-key>   # bulk-archive a final column
 pm task create --project <id|name> --stdin                # one task per stdin line
 
-# Ticket links (shows in both tickets; --type = blocks|blocked-by|causes|caused-by|relates)
-pm task link add  --id <id> --to <url|id> --type <type>
-pm task link list --id <id>
-pm task link rm   --id <id> --link <linkId>
+# Ticket links (--to takes a URL, id, or ticket key; shows in both tickets; --type = blocks|blocked-by|causes|caused-by|relates)
+pm task link add  --id <id|key> --to <url|id|key> --type <type>
+pm task link list --id <id|key>
+pm task link rm   --id <id|key> --link <linkId>
 pm board --project <id|name>                              # columns grouped by status
 pm project update --project <id|name> [--name <new>] [--description ...] [--remote-url <url>] [--default-status <key>] [--confirm]  # name/url need --confirm; --default-status sets new-task status, '' clears
 pm project delete --project <id|name>                     # soft delete

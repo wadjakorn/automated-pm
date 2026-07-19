@@ -140,6 +140,25 @@ export function useTaskRoute() {
     [params, router]
   );
 
+  // Rewrite the `task` param without adding a history entry — used to
+  // canonicalize a legacy nanoid link to its ticket key once it resolves.
+  // Optionally switches `project` in the SAME write: a cold deep link has to
+  // do both at once, and two separate router.replace calls would race, the
+  // second one clobbering the first's param.
+  //
+  // Reads window.location.search rather than the `params` snapshot so it can't
+  // resurrect a stale query string if something else just navigated.
+  const replaceTask = useCallback(
+    (id: string, projectId?: string) => {
+      const sp = new URLSearchParams(window.location.search);
+      sp.set("task", id);
+      if (projectId) sp.set("project", projectId);
+      const qs = sp.toString();
+      router.replace(qs ? `?${qs}` : window.location.pathname);
+    },
+    [router]
+  );
+
   const closeTask = useCallback(() => {
     const sp = new URLSearchParams(Array.from(params.entries()));
     sp.delete("task");
@@ -147,5 +166,5 @@ export function useTaskRoute() {
     router.replace(qs ? `?${qs}` : window.location.pathname);
   }, [params, router]);
 
-  return { taskParam, openTask, closeTask };
+  return { taskParam, openTask, replaceTask, closeTask };
 }

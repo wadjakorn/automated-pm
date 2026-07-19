@@ -39,17 +39,57 @@ const PRIORITY_ORDER_SQL =
 const now = () => new Date().toISOString();
 const id = () => nanoid(12);
 
-// Random default ticket prefix for a new project: 2 uppercase letters (Jira-like).
-const genTicketPrefix = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 2);
+// Random ticket prefix of N uppercase letters (Jira-like).
+const randomLetters = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 26);
+const randomPrefix = (len: number) => randomLetters(len);
 
-// Validate/normalize a ticket prefix: trimmed, 2–100 chars, no whitespace.
-function normTicketPrefix(v: unknown): string {
+// Is this prefix free? Prefixes are globally unique, case-insensitively — see
+// the UNIQUE index in db.ts. `exceptProjectId` lets a project re-save its own.
+function ticketPrefixTaken(prefix: string, exceptProjectId?: string): boolean {
+  return !!getDb()
+    .prepare(
+      "SELECT 1 FROM projects WHERE lower(ticket_prefix) = lower(?) AND id IS NOT ?"
+    )
+    .get(prefix, exceptProjectId ?? null);
+}
+
+// Default prefix for a new project. 2 letters is only 676 values, so collisions
+// start biting well before 676 projects (birthday-wise, around 30). Retry a
+// bounded number of times, then widen to 3 letters (17,576) and keep going —
+// the index would reject a duplicate anyway, better to never generate one.
+function genTicketPrefix(): string {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const len = attempt < 10 ? 2 : 3;
+    const p = randomPrefix(len);
+    if (!ticketPrefixTaken(p)) return p;
+  }
+  // Astronomically unlikely; fail loudly rather than hand back a duplicate.
+  throw new Error("could not generate a free ticket prefix");
+}
+
+// Validate/normalize a ticket prefix: trimmed, 2–100 chars, letter-led and made
+// only of letters/digits/underscores, upper-cased, and not already used by
+// another project.
+//
+// The grammar is not cosmetic: the prefix becomes the leading half of a ticket
+// key, and keys are handed around as URL query values and CLI arguments. Any
+// character outside this set would either need escaping in a share link or make
+// the key unrecognisable to getTask(). Upper-casing keeps stored prefixes in one
+// canonical form, so the display key always matches what the resolver accepts.
+function normTicketPrefix(v: unknown, exceptProjectId?: string): string {
   if (typeof v !== "string") throw badRequest("ticket prefix must be a string");
   const s = v.trim();
   if (s.length < 2 || s.length > 100)
     throw badRequest("ticket prefix must be 2–100 characters");
   if (/\s/.test(s)) throw badRequest("ticket prefix cannot contain whitespace");
-  return s;
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(s))
+    throw badRequest(
+      "ticket prefix must start with a letter and contain only letters, digits and underscores"
+    );
+  const prefix = s.toUpperCase();
+  if (ticketPrefixTaken(prefix, exceptProjectId))
+    throw badRequest(`ticket prefix "${prefix}" is already in use by another project`);
+  return prefix;
 }
 
 // Human-readable id from a project prefix + per-project number, zero-padded to
@@ -274,7 +314,7 @@ export function updateProject(
   const ticketPrefix =
     patch.ticket_prefix === undefined
       ? p.ticket_prefix
-      : normTicketPrefix(patch.ticket_prefix);
+      : normTicketPrefix(patch.ticket_prefix, p.id);
   const hidden = patch.hidden === undefined ? p.hidden : patch.hidden;
 
   const nameChanged = name !== p.name;
@@ -596,14 +636,46 @@ export function listReadyTickets(
     .all(status, pid, pid, aid, aid) as ReadyTicket[];
 }
 
+// Shape of a human ticket key: an uppercase-letter-led prefix, then 4+ digits.
+// This does NOT prove a string is a key rather than a storage id — a nanoid is
+// drawn from [A-Za-z0-9_-], so "ABC-12345678" is a perfectly possible id that
+// matches this shape. getTask() therefore resolves ids FIRST and only falls
+// back to a key lookup; this regex just avoids a pointless second query.
+const TICKET_KEY_RE = /^[A-Z][A-Za-z0-9_]*-\d{4,}$/;
+
+export function isTicketKey(s: string): boolean {
+  return TICKET_KEY_RE.test(s.trim());
+}
+
+// Resolve a PREFIX-NNNN key to its task. Prefix match is case-insensitive to
+// mirror the uniqueness index; the number is exact.
+export function getTaskByTicketKey(key: string, includeDeleted = false): Task {
+  const m = key.trim().match(/^(.+)-(\d+)$/);
+  if (!m) throw notFound("task");
+  const t = getDb()
+    .prepare(
+      `${TASK_SELECT} WHERE lower(p.ticket_prefix)=lower(?) AND t.ticket_number=?
+       ${includeDeleted ? "" : "AND t.deleted_at IS NULL"}`
+    )
+    .get(m[1], Number(m[2])) as any;
+  if (!t) throw notFound("task");
+  return mapTask(t);
+}
+
+// Accepts either storage id (nanoid) or human ticket key — everything that
+// takes a task id routes through here, so keys work in the API and CLI too.
 export function getTask(taskId: string, includeDeleted = false): Task {
+  // Storage id wins. A nanoid can coincidentally look like a ticket key, so
+  // checking the key shape first could hijack a legacy link to another task.
+  // An id is exact and unique, so trying it first can never mis-resolve.
   const t = getDb()
     .prepare(
       `${TASK_SELECT} WHERE t.id=? ${includeDeleted ? "" : "AND t.deleted_at IS NULL"}`
     )
     .get(taskId) as any;
-  if (!t) throw notFound("task");
-  return mapTask(t);
+  if (t) return mapTask(t);
+  if (isTicketKey(taskId)) return getTaskByTicketKey(taskId, includeDeleted);
+  throw notFound("task");
 }
 
 export function createTask(
@@ -689,6 +761,7 @@ export function updateTask(
   }
 ): Task {
   const t = getTask(taskId);
+  taskId = t.id; // caller may have passed a ticket key
   assertVersion(t, patch.version);
   const title = patch.title?.trim() ?? t.title;
   if (!title) throw badRequest("title cannot be empty");
@@ -716,6 +789,7 @@ export function moveTask(
   opts: { version?: number; rank?: number } = {}
 ): Task {
   const t = getTask(taskId);
+  taskId = t.id;
   assertVersion(t, opts.version);
   const sm = getStateMachine(t.project_id);
   const check = canTransition(sm, t.status_key, toStatus);
@@ -730,7 +804,7 @@ export function moveTask(
 }
 
 export function softDeleteTask(taskId: string): { ok: true } {
-  getTask(taskId);
+  taskId = getTask(taskId).id;
   getDb()
     .prepare("UPDATE tasks SET deleted_at=?, version=version+1, updated_at=? WHERE id=?")
     .run(now(), now(), taskId);
@@ -739,6 +813,7 @@ export function softDeleteTask(taskId: string): { ok: true } {
 
 export function restoreTask(taskId: string): Task {
   const t = getTask(taskId, true);
+  taskId = t.id;
   if (!t.deleted_at) return t;
   getDb()
     .prepare("UPDATE tasks SET deleted_at=NULL, version=version+1, updated_at=? WHERE id=?")
@@ -760,6 +835,7 @@ function isFinalStatus(projectId: string, statusKey: string): boolean {
 
 export function archiveTask(taskId: string, opts: { version?: number } = {}): Task {
   const t = getTask(taskId);
+  taskId = t.id;
   assertVersion(t, opts.version);
   if (t.archived_at) return t; // idempotent
   if (!isFinalStatus(t.project_id, t.status_key))
@@ -772,6 +848,7 @@ export function archiveTask(taskId: string, opts: { version?: number } = {}): Ta
 
 export function unarchiveTask(taskId: string): Task {
   const t = getTask(taskId);
+  taskId = t.id;
   if (!t.archived_at) return t;
   getDb()
     .prepare("UPDATE tasks SET archived_at=NULL, version=version+1, updated_at=? WHERE id=?")
@@ -834,11 +911,14 @@ export function createLink(
   targetRef: string,
   option: LinkOption
 ): LinkedTicket {
-  getTask(thisId); // 404 if the source ticket is gone
-  const otherId = parseTicketRef(targetRef ?? "");
-  if (!otherId) throw badRequest("could not read a ticket id from that link");
+  // Both endpoints may arrive as a nanoid or a ticket key; resolve to storage
+  // ids before building the edge so links are always keyed consistently.
+  thisId = getTask(thisId).id; // 404 if the source ticket is gone
+  const otherRef = parseTicketRef(targetRef ?? "");
+  if (!otherRef) throw badRequest("could not read a ticket id from that link");
+  // target must be a live task (not_found if missing/deleted)
+  const otherId = getTask(otherRef).id;
   if (otherId === thisId) throw badRequest("a ticket cannot link to itself");
-  getTask(otherId); // target must be a live task (not_found if missing/deleted)
   const edge = edgeFromOption(thisId, otherId, option);
   const lid = id();
   try {
@@ -857,7 +937,7 @@ export function createLink(
 }
 
 export function listLinksFor(taskId: string): LinkedTicket[] {
-  getTask(taskId);
+  taskId = getTask(taskId).id;
   const rows = getDb()
     .prepare(
       "SELECT * FROM task_links WHERE source_id=? OR target_id=? ORDER BY created_at"

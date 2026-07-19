@@ -186,6 +186,34 @@ function migrate(db: Database.Database) {
   if (!projectCols.has("ticket_prefix")) {
     db.exec("ALTER TABLE projects ADD COLUMN ticket_prefix TEXT");
   }
+  // Prefixes are globally unique so a ticket key (PREFIX-NNNN) names exactly
+  // one task — that is what makes keys usable as ids in URLs, the API and the
+  // CLI. Case-insensitive: "pm" and "PM" would print the same key. NULL is
+  // exempt (SQLite allows many NULLs in a UNIQUE index), so the pre-prefix
+  // projects that never got one stay valid.
+  //
+  // No backfill: if real duplicates already exist this CREATE throws and
+  // startup fails loudly. That is deliberate — silently renaming someone's
+  // prefix would break every link that already used it. Resolve by hand.
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_ticket_prefix ON projects (lower(ticket_prefix))"
+    );
+  } catch (e) {
+    const dupes = db
+      .prepare(
+        `SELECT lower(ticket_prefix) p, group_concat(name, ', ') names
+           FROM projects WHERE ticket_prefix IS NOT NULL
+          GROUP BY 1 HAVING count(*) > 1`
+      )
+      .all() as { p: string; names: string }[];
+    if (!dupes.length) throw e;
+    throw new Error(
+      "ticket prefixes must be unique across projects, but duplicates exist:\n" +
+        dupes.map((d) => `  "${d.p}" — ${d.names}`).join("\n") +
+        "\nRename all but one of each (Settings → Ticket prefix) and restart."
+    );
+  }
   // Sidebar ordering: a user-controlled integer. Added nullable (SQLite can't
   // ADD a NOT NULL column without a constant default), then backfilled by
   // created_at so the initial order matches the old ORDER BY created_at. New

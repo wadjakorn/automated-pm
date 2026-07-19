@@ -1,8 +1,15 @@
 import type { Task, LinkVerb } from "./types";
 
+// How a ticket names itself in URLs, the API and the CLI: the human key when
+// the project has a prefix, else the raw nanoid. Prefixes are globally unique
+// (see lib/db.ts), so a key resolves to exactly one task.
+export function ticketRef(task: Pick<Task, "id" | "ticket_key">): string {
+  return task.ticket_key ?? task.id;
+}
+
 // Canonical shareable link for a ticket: task-only, project resolved on open.
-export function shareLink(origin: string, id: string): string {
-  return `${origin}/?task=${id}`;
+export function shareLink(origin: string, task: Pick<Task, "id" | "ticket_key">): string {
+  return `${origin}/?task=${ticketRef(task)}`;
 }
 
 // The five labels a user picks from when linking. Each maps to one stored verb
@@ -71,7 +78,8 @@ export function parseTicketRef(input: string): string | null {
   // URL form first: `task=` may sit anywhere in the query, with other params.
   const m = s.match(/[?&]task=([^&\s]+)/);
   if (m) return decodeURIComponent(m[1]);
-  // Bare token: ids are nanoid(12) — url-safe alphabet, no slashes or spaces.
+  // Bare token: either a nanoid(12) (url-safe alphabet, no slashes or spaces)
+  // or a human ticket key like PM-0002 — both match this shape.
   if (/^[A-Za-z0-9_-]+$/.test(s)) return s;
   return null;
 }
@@ -87,10 +95,23 @@ export type TicketAction =
 export function resolveTicketAction(
   taskParam: string | null,
   tasks: Task[],
-  editingId: string | null
+  editing: Pick<Task, "id" | "ticket_key"> | null
 ): TicketAction {
-  if (!taskParam) return editingId ? { kind: "close" } : { kind: "noop" };
-  if (taskParam === editingId) return { kind: "noop" };
-  const found = tasks.find((t) => t.id === taskParam);
-  return found ? { kind: "open-local", task: found } : { kind: "fetch" };
+  if (!taskParam) return editing ? { kind: "close" } : { kind: "noop" };
+
+  // Storage id wins over ticket key, mirroring getTask() on the server. A
+  // random id can coincidentally spell a valid key ("ABC-00012345"), so every
+  // id candidate must be exhausted before any key is considered — otherwise a
+  // legacy link could open whichever ticket happens to own that key.
+  if (taskParam === editing?.id) return { kind: "noop" };
+  const byId = tasks.find((t) => t.id === taskParam);
+  if (byId) return { kind: "open-local", task: byId };
+
+  // Only now interpret the param as a key. Checking the open ticket separately
+  // from `tasks` matters: a deep link names it by key while the drawer holds
+  // the nanoid, and it may not be in `tasks` at all (archived, or in another
+  // project) — comparing against the list alone would refetch it every render.
+  if (taskParam === editing?.ticket_key) return { kind: "noop" };
+  const byKey = tasks.find((t) => t.ticket_key === taskParam);
+  return byKey ? { kind: "open-local", task: byKey } : { kind: "fetch" };
 }

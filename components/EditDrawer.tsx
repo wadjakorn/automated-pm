@@ -241,7 +241,7 @@ export function EditDrawer({
           <div className="flex items-center gap-3">
             <button
               onClick={async () => {
-                const link = shareLink(window.location.origin, task.id);
+                const link = shareLink(window.location.origin, task);
                 if (await copyText(link)) {
                   toast("Link copied", "success");
                 } else {
