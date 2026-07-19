@@ -206,9 +206,17 @@ export function Board() {
     // action.kind === "fetch": deep link to a task not in the loaded list.
     if (!taskParam || resolvingRef.current === taskParam) return;
     resolvingRef.current = taskParam;
+    const requested = taskParam;
+    // The URL still has to be asking for THIS ticket when the request lands.
+    // The effect is blocked from re-running while a fetch is in flight, so a
+    // Back or a click elsewhere meanwhile would otherwise be undone: the late
+    // result would reopen the old drawer and rewrite ?task= back to it.
+    const stillWanted = () =>
+      new URLSearchParams(window.location.search).get("task") === requested;
     api
-      .getTask(taskParam)
+      .getTask(requested)
       .then((t) => {
+        if (!stillWanted()) return;
         setEditing(t);
         // Canonicalize the link and switch project in ONE url write. Doing the
         // project switch separately would race this replace, and whichever ran
@@ -216,9 +224,10 @@ export function Board() {
         // project with the drawer's ticket nowhere in the list.
         const ref = ticketRef(t);
         const proj = t.project_id !== selectedId ? t.project_id : undefined;
-        if (taskParam !== ref || proj) replaceTaskRef.current(ref, proj);
+        if (requested !== ref || proj) replaceTaskRef.current(ref, proj);
       })
       .catch(() => {
+        if (!stillWanted()) return;
         toast("Ticket not found", "error");
         closeTaskRef.current();
       })
