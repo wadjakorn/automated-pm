@@ -39,18 +39,34 @@ function parseFlags(argv: string[]): Flags {
   return flags;
 }
 
+// Thrown by finish() to unwind out of main() once the final output is queued.
+class CliExit extends Error {
+  constructor(readonly code: number) {
+    super(`cli exit ${code}`);
+  }
+}
+
+// The single way the CLI ends: queue the final output, record the exit code and
+// unwind. Never call process.exit() here — stdout to a pipe is asynchronous in
+// Node, so exiting right after write() truncates large output (e.g. a ~300KB
+// `task list --json` piped into jq). Letting the process end naturally keeps it
+// alive until stdout has fully drained.
+function finish(text: string, code: number): never {
+  process.exitCode = code;
+  process.stdout.write(text + "\n");
+  throw new CliExit(code);
+}
+
 // Render an API response and exit. Success → render(kind); failure → renderError.
 function emit(kind: Kind, r: { status: number; json: any }): never {
   const ok = r.status >= 200 && r.status < 300;
   const data = r.json ?? (ok ? { ok: true } : { error: "http_" + r.status });
   const text = ok ? render(kind, data, R) : renderError(data, R);
-  process.stdout.write(text + "\n");
-  process.exit(ok ? 0 : 1);
+  finish(text, ok ? 0 : 1);
 }
 
 function fail(message: string, extra: Record<string, unknown> = {}): never {
-  process.stdout.write(renderError({ error: "cli_error", message, ...extra }, R) + "\n");
-  process.exit(1);
+  finish(renderError({ error: "cli_error", message, ...extra }, R), 1);
 }
 
 async function api(
@@ -178,17 +194,14 @@ async function board(f: Flags): Promise<never> {
 
 async function main() {
   if (R.showVersion) {
-    process.stdout.write(`pm ${VERSION}\n`);
-    process.exit(0);
+    finish(`pm ${VERSION}`, 0);
   }
 
   const [group, rawAction, ...rest] = R.argv;
   const action = ALIAS[rawAction] ?? rawAction;
 
   if (!group || group === "help" || group === "--help") {
-    if (R.mode === "json") process.stdout.write(JSON.stringify({ help: HELP }, null, 2) + "\n");
-    else process.stdout.write(HELP + "\n");
-    process.exit(0);
+    finish(R.mode === "json" ? JSON.stringify({ help: HELP }, null, 2) : HELP, 0);
   }
 
   // Single-word commands: flags live in [rawAction, ...rest].
@@ -482,6 +495,26 @@ function isEntrypoint(): boolean {
   }
 }
 
+// Run main() and turn any outcome into output + exit code without process.exit(),
+// so buffered stdout always drains before the process ends.
+async function run(entry: () => Promise<unknown>): Promise<void> {
+  try {
+    await entry();
+  } catch (e: any) {
+    if (e instanceof CliExit) return;
+    try {
+      fail(String(e?.message ?? e));
+    } catch (e2) {
+      if (!(e2 instanceof CliExit)) throw e2;
+    }
+  }
+}
+
 if (isEntrypoint()) {
-  main().catch((e) => fail(String(e?.message ?? e)));
+  // A reader that closes early (`pm ... | head`) is not an error worth a stack trace.
+  process.stdout.on("error", (e: NodeJS.ErrnoException) => {
+    if (e.code === "EPIPE") process.exit(process.exitCode ?? 0);
+    throw e;
+  });
+  void run(main);
 }
