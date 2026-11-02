@@ -93,6 +93,8 @@ export interface ReadyTicket {
   title: string;
   priority: Priority;
   description: string | null;
+  ticket_key: string | null; // PREFIX-NNNN, null when the project has no prefix
+  version: number;           // for an optimistic follow-up write
 }
 
 // A user account. password_hash and api_token are secrets — never serialize

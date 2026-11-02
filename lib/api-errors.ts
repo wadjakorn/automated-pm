@@ -82,6 +82,13 @@ export function handle(
           { status: err.status }
         );
       }
+      // `await req.json()` on a malformed body throws a SyntaxError: that is
+      // the caller's mistake (400), not a server fault.
+      if (err instanceof SyntaxError)
+        return NextResponse.json(
+          { error: "bad_request", message: `invalid JSON body: ${err.message}` },
+          { status: 400 }
+        );
       console.error("Unhandled API error:", err);
       return NextResponse.json(
         { error: "internal", message: String(err?.message ?? err) },

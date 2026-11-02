@@ -45,15 +45,14 @@ describe("GET /api/cc-bridge/ready", () => {
     expect(body[0]).toHaveProperty("repo");
   });
 
-  it("filters by ?project=", async () => {
+  it("an unknown ?project= is a 404, not an empty queue", async () => {
     const res = await get({ authorization: `Bearer ${token}` }, "?project=no-such");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe("not_found");
   });
 
-  it("filters by ?assignee= (unknown user → [])", async () => {
+  it("an unknown ?assignee= is a 404, not an empty queue", async () => {
     const res = await get({ authorization: `Bearer ${token}` }, "?assignee=ghost-user");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
+    expect(res.status).toBe(404);
   });
 });

@@ -83,7 +83,7 @@ pm transition add --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
 pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
-pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>]
+pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>] [--view summary|full]
 # every --id below takes the nanoid OR the human ticket key (e.g. PM-0002)
 pm task move --id <id|key> --status <key> [--from <key>] [--version <n>]   # --from = claim
 pm task update --id <id|key> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
@@ -92,14 +92,14 @@ pm task restore --id <id|key>
 pm task archive --id <id|key>         # final-status only; off the board but stays live
 pm task unarchive --id <id|key>
 pm task archive-final --project <id|name> --status <final-key>   # bulk-archive a final column
-pm task create --project <id|name> --stdin          # one task per non-empty stdin line
+pm task create --project <id|name> --stdin          # one task per non-empty stdin line, all-or-nothing
 
 # Ticket links: --to is a ticket URL, bare id, or ticket key; --type = blocks|blocked-by|causes|caused-by|relates
 pm task link add  --id <id|key> --to <url|id|key> --type <type>   # link shows in BOTH tickets (inverse label)
 pm task link list --id <id|key>
 pm task link rm   --id <id|key> --link <linkId>
 
-pm board --project <id|name>                        # columns view: tasks grouped by status
+pm board --project <id|name> [--view summary]      # columns view: tasks grouped by status
 
 # changing --name or --remote-url is a guarded edit: it needs --confirm.
 # --default-status (not guarded) sets the status new tasks land in without an
@@ -122,8 +122,17 @@ user. Creator is set from `PM_TOKEN` (the authenticated caller), not a flag.
   ready-to-work tickets (status `todo`) across projects that have a remote repo
   URL, with the repo URL + description joined. `--assignee` narrows to one user
   (a fleet of pollers pins distinct assignees). Requires `PM_TOKEN`. This is the
-  source of work for the cc-bridge poll routine; claim a ticket by moving it
-  `todo → doing`.
+  source of work for the cc-bridge poll routine; claim a ticket with
+  `pm task move --id <id> --status doing --from todo`. Tickets still blocked by
+  a live, unfinished `blocks` link are left out. An unknown `--project` or
+  `--assignee` is `not_found` (never an empty list). Each row carries
+  `ticket_key` and `version`.
+
+**Keeping output small.** Descriptions can be tens of KB. Pass `--view summary`
+to `task list` / `board` to get a 200-char excerpt plus `has_more_description`;
+fetch one ticket in full with `pm task get --id <key>`. Values that start with
+`--` use the `=` form: `--title=--draft--`. A flag that needs a value but has
+none is a `cli_error`; an unknown command returns `did_you_mean`.
 
 ## Key rules you must respect
 
