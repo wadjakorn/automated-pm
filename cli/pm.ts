@@ -74,7 +74,7 @@ export const COMMANDS = [
   "task delete", "task restore", "task archive", "task unarchive", "task archive-final",
   "task link add", "task link list", "task link rm",
   "board", "ready", "help",
-  "comment", "log", "inbox", "resolve", "events",
+  "comment", "log", "inbox", "resolve", "events", "search", "mine",
 ];
 
 function editDistance(a: string, b: string): number {
@@ -251,6 +251,10 @@ const HELP = `pm — Project Manager CLI
   pm inbox [--project <id|name>] [--assignee <id|username>]   # open questions waiting for a human
   pm resolve --comment <commentId>                         # close a question without answering
   pm events [--since <seq>] [--project <id|name>] [--limit <n>]   # cross-ticket change feed
+
+  # search & home — search spans projects, titles, descriptions and comments (Thai ok)
+  pm search <words…> [--project <p>] [--status <key>] [--assignee <u>] [--limit <n>] [--include-deleted]
+  pm mine [--user <id|username>]   # my open tickets across projects + agents at work + inbox count
   # values that start with -- use the = form: --title=--draft--
   pm ready [--project <id|name>] [--assignee <id|username>]   # ready tickets (repo + desc) for the poll routine
 `;
@@ -296,7 +300,7 @@ async function main() {
   }
 
   // Single-word commands: flags live in [rawAction, ...rest].
-  if (["login", "whoami", "board", "ready", "comment", "log", "inbox", "resolve", "events"].includes(group)) {
+  if (["login", "whoami", "board", "ready", "comment", "log", "inbox", "resolve", "events", "search", "mine"].includes(group)) {
     const sf = parseFlags([rawAction, ...rest].filter((x): x is string => !!x));
     const bareS = bareValueFlag(sf);
     if (bareS) fail(`--${bareS} needs a value (use --${bareS}=<value> if it starts with --)`);
@@ -353,6 +357,31 @@ async function main() {
       if (typeof sf.limit === "string") qs.set("limit", sf.limit);
       const q = qs.toString() ? `?${qs}` : "";
       return emit("activity", await api("GET", `/api/events${q}`));
+    }
+    if (group === "search") {
+      // `pm search <words…>` or `pm search --query "<words>"`.
+      const words = [rawAction, ...rest].filter((x): x is string => !!x);
+      const positional: string[] = [];
+      for (let i = 0; i < words.length; i++) {
+        if (words[i].startsWith("--")) {
+          if (!words[i].includes("=") && words[i + 1] !== undefined && !words[i + 1].startsWith("--")) i++;
+          continue;
+        }
+        positional.push(words[i]);
+      }
+      const q = typeof sf.query === "string" ? sf.query : positional.join(" ");
+      if (!q.trim()) fail("give search words: pm search <words> (or --query)");
+      const qs = new URLSearchParams({ q });
+      for (const k of ["project", "status", "assignee", "limit"])
+        if (typeof sf[k] === "string") qs.set(k, sf[k] as string);
+      if (sf["include-deleted"]) qs.set("includeDeleted", "true");
+      return emit("search", await api("GET", `/api/search?${qs}`));
+    }
+    if (group === "mine") {
+      const qs = new URLSearchParams();
+      if (typeof sf.user === "string") qs.set("user", sf.user);
+      const q = qs.toString() ? `?${qs}` : "";
+      return emit("overview", await api("GET", `/api/overview${q}`));
     }
     if (group === "ready") {
       const qs = new URLSearchParams();

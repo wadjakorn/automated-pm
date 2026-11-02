@@ -1299,3 +1299,157 @@ export function listInbox(opts: { project?: string; assignee?: string } = {}): I
     .all(pid, pid, aid, aid);
   return rows.map((r: any) => mapActivity(r) as InboxItem);
 }
+
+// ---------------- Search & overview ----------------
+
+export interface SearchHit {
+  task: Task & { has_more_description: boolean };
+  project_name: string;
+  // Matched text with [brackets] around the hit, from title/description/comments.
+  snippet: string | null;
+}
+
+const MIN_TRIGRAM = 3;
+
+// Full-text search across projects (title, description, comments), archived
+// tickets included. A ticket key or id is an exact hit first. Terms of 3+
+// characters use the trigram index (substring match, works for Thai); shorter
+// terms filter with LIKE on title/description.
+export function searchTasks(opts: {
+  q?: unknown;
+  project?: string;
+  status?: string;
+  assignee?: string;
+  includeDeleted?: boolean;
+  limit?: unknown;
+}): SearchHit[] {
+  const q = typeof opts.q === "string" ? opts.q.trim() : "";
+  if (!q) throw badRequest("q is required");
+  const limit = clampLimit(opts.limit, 20, 100);
+  const pid = opts.project ? getProject(opts.project).id : null;
+  const aid = opts.assignee ? resolveUserId(opts.assignee) : null;
+  const terms = q.split(/\s+/).filter(Boolean);
+  const long = terms.filter((t) => [...t].length >= MIN_TRIGRAM);
+  const short = terms.filter((t) => [...t].length < MIN_TRIGRAM);
+
+  const where = [
+    "(? IS NULL OR t.project_id = ?)",
+    "(? IS NULL OR t.status_key = ?)",
+    "(? IS NULL OR t.assignee_id = ?)",
+    "p.deleted_at IS NULL",
+  ];
+  const params: unknown[] = [pid, pid, opts.status ?? null, opts.status ?? null, aid, aid];
+  if (!opts.includeDeleted) where.push("t.deleted_at IS NULL");
+  for (const s of short) {
+    where.push("(t.title LIKE ? OR t.description LIKE ?)");
+    params.push(`%${s}%`, `%${s}%`);
+  }
+
+  let rows: { id: string; snippet: string | null }[];
+  if (long.length) {
+    const match = long.map((t) => `"${t.replace(/"/g, '""')}"`).join(" ");
+    rows = getDb()
+      .prepare(
+        `SELECT t.id, snippet(task_fts, -1, '[', ']', '…', 24) AS snippet
+           FROM task_fts JOIN tasks t ON t.rowid = task_fts.rowid
+           JOIN projects p ON p.id = t.project_id
+          WHERE task_fts MATCH ? AND ${where.join(" AND ")}
+          ORDER BY bm25(task_fts, 10.0, 3.0, 1.0), t.updated_at DESC
+          LIMIT ?`
+      )
+      .all(match, ...params, limit) as any[];
+  } else {
+    rows = getDb()
+      .prepare(
+        `SELECT t.id, NULL AS snippet FROM tasks t JOIN projects p ON p.id = t.project_id
+          WHERE ${where.join(" AND ")} ORDER BY t.updated_at DESC LIMIT ?`
+      )
+      .all(...params, limit) as any[];
+  }
+
+  // An exact ticket key / id goes first (and is found even if the text isn't).
+  let exact: Task | null = null;
+  try {
+    exact = getTask(q, !!opts.includeDeleted);
+  } catch {
+    exact = null;
+  }
+  const ids = rows.map((r) => r.id);
+  if (exact && (!pid || exact.project_id === pid)) {
+    rows = [{ id: exact.id, snippet: null }, ...rows.filter((r) => r.id !== exact!.id)].slice(0, limit);
+  } else if (!ids.length) {
+    return [];
+  }
+  const names = new Map<string, string>();
+  return rows.map((r) => {
+    const t = getTask(r.id, true);
+    if (!names.has(t.project_id)) names.set(t.project_id, getProject(t.project_id, true).name);
+    return { task: summarize(t), project_name: names.get(t.project_id)!, snippet: r.snippet };
+  });
+}
+
+// Inline excerpt (same rule as lib/task-view summarizeTask; kept local to
+// avoid a repo → view import cycle).
+function summarize(t: Task): Task & { has_more_description: boolean } {
+  const d = t.description;
+  if (d == null || d.length <= 200) return { ...t, has_more_description: false };
+  return { ...t, description: d.slice(0, 200).trimEnd() + "…", has_more_description: true };
+}
+
+// How long an agent's in-progress ticket may sit untouched before it counts
+// as stale (matches capz-loop's crashed-run threshold).
+export const STALE_AFTER_MS = 2 * 60 * 60 * 1000;
+
+export interface Overview {
+  user: PublicUser | null;
+  // Open tickets assigned to the user, across projects (not in a final status).
+  mine: (Task & { has_more_description: boolean; project_name: string })[];
+  // Tickets agents are working on: assigned to an agent user, past the first
+  // and ready statuses, not final. `stale` = untouched for STALE_AFTER_MS.
+  agents: (Task & { has_more_description: boolean; project_name: string; stale: boolean })[];
+  inbox_count: number;
+}
+
+export function overview(userRef?: string | null): Overview {
+  const db = getDb();
+  const user = userRef ? publicUser(getUser(userRef)) : null;
+  const open = `t.deleted_at IS NULL AND t.archived_at IS NULL AND p.deleted_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM statuses s WHERE s.project_id = t.project_id AND s.key = t.status_key AND s.is_final = 1)`;
+  const withProject = (r: any) => ({ ...summarize(getTask(r.id)), project_name: r.project_name as string });
+
+  const mine = user
+    ? (db
+        .prepare(
+          `SELECT t.id, p.name AS project_name FROM tasks t JOIN projects p ON p.id = t.project_id
+            WHERE t.assignee_id = ? AND ${open}
+            ORDER BY ${PRIORITY_ORDER_SQL}, t.updated_at DESC LIMIT 200`
+        )
+        .all(user.id) as any[]).map(withProject)
+    : [];
+
+  const cutoff = Date.now() - STALE_AFTER_MS;
+  const agents = (db
+    .prepare(
+      `SELECT t.id, p.name AS project_name FROM tasks t
+         JOIN projects p ON p.id = t.project_id
+         JOIN users u ON u.id = t.assignee_id AND u.kind = 'agent'
+        WHERE ${open}
+          AND t.status_key <> COALESCE(
+                (SELECT s.key FROM statuses s WHERE s.project_id = p.id AND s.key = p.ready_status_key), '${READY_STATUS_KEY}')
+          AND t.status_key <> (SELECT s.key FROM statuses s WHERE s.project_id = t.project_id ORDER BY s.sort_order LIMIT 1)
+        ORDER BY t.updated_at LIMIT 200`
+    )
+    .all() as any[]).map((r) => {
+    const t = withProject(r);
+    return { ...t, stale: Date.parse(t.updated_at) < cutoff };
+  });
+
+  const inbox_count = (db
+    .prepare(
+      `SELECT count(*) n FROM task_activity a JOIN tasks t ON t.id = a.task_id
+        WHERE a.type='comment' AND a.kind='question' AND a.resolved_at IS NULL AND t.deleted_at IS NULL`
+    )
+    .get() as { n: number }).n;
+
+  return { user, mine, agents, inbox_count };
+}

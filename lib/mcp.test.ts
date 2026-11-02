@@ -45,6 +45,8 @@ describe("MCP server", () => {
       "pm_list_ready",
       "pm_list_tasks",
       "pm_move_task",
+      "pm_my_work",
+      "pm_search_tasks",
       "pm_update_task",
       "pm_whoami",
     ]);

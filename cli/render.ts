@@ -2,7 +2,7 @@ import type { Mode } from "./mode";
 
 export type Kind =
   | "projects" | "project" | "statemachine"
-  | "tasks" | "task" | "taskdetail" | "board" | "ready" | "activity" | "inbox" | "ok" | "raw";
+  | "tasks" | "task" | "taskdetail" | "board" | "ready" | "activity" | "inbox" | "search" | "overview" | "ok" | "raw";
 
 export interface RenderOpts {
   mode: Mode;
@@ -193,6 +193,37 @@ function renderInbox(list: any[]): string {
   );
 }
 
+function renderSearch(hits: any[], o: RenderOpts): string {
+  if (!hits.length) return "(no matches)";
+  return hits
+    .map((h) => {
+      const t = h.task;
+      const tag = [t.status_key, t.archived_at ? "archived" : "", t.deleted_at ? "deleted" : ""].filter(Boolean).join(", ");
+      const head = `${paint(ref(t), ANSI.bold, o.color)}  ${t.title}  ${paint(`${h.project_name} · ${tag}`, ANSI.dim, o.color)}`;
+      return h.snippet ? `${head}\n    ${String(h.snippet).replace(/\s+/g, " ")}` : head;
+    })
+    .join("\n");
+}
+
+function renderOverview(ov: any, o: RenderOpts): string {
+  const line = (t: any, extra = "") =>
+    `  ${ref(t).padEnd(10)} ${String(t.status_key).padEnd(10)} ${String(t.priority ?? "").padEnd(6)} ${t.title}  ${paint(t.project_name + extra, ANSI.dim, o.color)}`;
+  const who = ov.user ? ov.user.username : "(anonymous — set PM_TOKEN or --user)";
+  const mine = ov.mine?.length ? ov.mine.map((t: any) => line(t)).join("\n") : "  (nothing open)";
+  const agents = ov.agents?.length
+    ? ov.agents.map((t: any) => line(t, ` @${t.assignee_username}${t.stale ? " · STALE" : ""}`)).join("\n")
+    : "  (no agent work in progress)";
+  return [
+    paint(`My open tickets — ${who}`, ANSI.bold, o.color),
+    mine,
+    "",
+    paint("Agents at work", ANSI.bold, o.color),
+    agents,
+    "",
+    `Inbox: ${ov.inbox_count} open question${ov.inbox_count === 1 ? "" : "s"}${ov.inbox_count ? " (pm inbox)" : ""}`,
+  ].join("\n");
+}
+
 export function render(kind: Kind, data: any, o: RenderOpts): string {
   if (o.mode === "json") return json(data);
   switch (kind) {
@@ -206,6 +237,8 @@ export function render(kind: Kind, data: any, o: RenderOpts): string {
     case "ready": return renderReady(data);
     case "activity": return renderActivity(data, o);
     case "inbox": return renderInbox(data);
+    case "search": return renderSearch(data, o);
+    case "overview": return renderOverview(data, o);
     case "ok": return `${paint("✓", ANSI.green, o.color)} done`;
     default: return json(data);
   }

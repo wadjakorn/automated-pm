@@ -286,4 +286,42 @@ function migrate(db: Database.Database) {
   } catch {
     // pre-existing duplicate live names; leave to app-level guards
   }
+
+  // Full-text search over tickets: title, description and all comment text.
+  // trigram tokenizer = substring matching that works for Thai (no word
+  // spaces) as well as English. Rows are keyed by tasks.rowid and kept in sync
+  // by triggers; comments are appended as they are posted.
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS task_fts
+      USING fts5(title, description, comments, tokenize='trigram');
+
+    CREATE TRIGGER IF NOT EXISTS task_fts_ai AFTER INSERT ON tasks BEGIN
+      INSERT INTO task_fts(rowid, title, description, comments)
+      VALUES (new.rowid, new.title, coalesce(new.description, ''), '');
+    END;
+    CREATE TRIGGER IF NOT EXISTS task_fts_au AFTER UPDATE OF title, description ON tasks BEGIN
+      UPDATE task_fts SET title = new.title, description = coalesce(new.description, '')
+       WHERE rowid = new.rowid;
+    END;
+    CREATE TRIGGER IF NOT EXISTS task_fts_ad AFTER DELETE ON tasks BEGIN
+      DELETE FROM task_fts WHERE rowid = old.rowid;
+    END;
+    CREATE TRIGGER IF NOT EXISTS task_fts_comment AFTER INSERT ON task_activity
+      WHEN new.type = 'comment' BEGIN
+      UPDATE task_fts SET comments = comments || char(10) || new.body
+       WHERE rowid = (SELECT rowid FROM tasks WHERE id = new.task_id);
+    END;
+  `);
+  // Backfill once (existing DBs): every task, with its comments so far.
+  const ftsRows = (db.prepare("SELECT count(*) n FROM task_fts").get() as { n: number }).n;
+  const taskRows = (db.prepare("SELECT count(*) n FROM tasks").get() as { n: number }).n;
+  if (ftsRows === 0 && taskRows > 0) {
+    db.exec(`
+      INSERT INTO task_fts(rowid, title, description, comments)
+      SELECT t.rowid, t.title, coalesce(t.description, ''),
+             coalesce((SELECT group_concat(a.body, char(10)) FROM task_activity a
+                        WHERE a.task_id = t.id AND a.type = 'comment'), '')
+        FROM tasks t;
+    `);
+  }
 }
