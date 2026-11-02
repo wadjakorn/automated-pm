@@ -2,7 +2,7 @@ import type { Mode } from "./mode";
 
 export type Kind =
   | "projects" | "project" | "statemachine"
-  | "tasks" | "task" | "taskdetail" | "board" | "ready" | "ok" | "raw";
+  | "tasks" | "task" | "taskdetail" | "board" | "ready" | "activity" | "inbox" | "ok" | "raw";
 
 export interface RenderOpts {
   mode: Mode;
@@ -146,6 +146,53 @@ function renderBoard(b: any, o: RenderOpts): string {
     .join("\n\n");
 }
 
+// One history line: "#seq  time  who  what".
+function activityLine(e: any, o: RenderOpts): string {
+  const when = String(e.created_at ?? "").replace("T", " ").slice(5, 16);
+  const who = e.actor_username ? `${e.actor_username}${e.actor_kind === "agent" ? "🤖" : ""}` : "anonymous";
+  const p = e.payload ?? {};
+  let what: string;
+  switch (e.type) {
+    case "comment": {
+      const tag = e.kind && e.kind !== "note" ? `[${e.kind}${e.kind === "question" ? (e.resolved_at ? " ✓" : " open") : ""}] ` : "";
+      what = `${tag}${e.body}`;
+      break;
+    }
+    case "created": what = `created in ${p.status}`; break;
+    case "status": what = `moved ${p.from} → ${p.to}`; break;
+    case "field":
+      what = Object.entries(p.changes ?? {})
+        .map(([k, v]: [string, any]) => (k === "description" ? `description ${v.from}→${v.to} chars` : `${k} ${v.from ?? "—"} → ${v.to ?? "—"}`))
+        .join(", ");
+      break;
+    case "link": what = `linked: ${p.label} ${p.other}`; break;
+    case "unlink": what = `unlinked ${p.verb} ${p.other}`; break;
+    default: what = e.type;
+  }
+  const key = e.ticket_key ? `${e.ticket_key} ` : "";
+  return `${paint(`#${e.seq}`, ANSI.dim, o.color)} ${paint(when, ANSI.dim, o.color)} ${paint(who, ANSI.cyan, o.color)}  ${key}${what}  ${paint(e.id, ANSI.dim, o.color)}`;
+}
+
+function renderActivity(data: any, o: RenderOpts): string {
+  const list = Array.isArray(data) ? data : [data];
+  if (!list.length) return "(no activity)";
+  return list.map((e) => activityLine(e, o)).join("\n");
+}
+
+function renderInbox(list: any[]): string {
+  if (!list.length) return "(inbox empty — nothing waiting on you)";
+  return table(
+    ["TICKET", "PROJECT", "FROM", "QUESTION", "COMMENT ID"],
+    list.map((q) => [
+      q.ticket_key ?? q.task_id,
+      q.project_name ?? "",
+      q.actor_username ?? "anonymous",
+      String(q.body ?? "").replace(/\s+/g, " ").slice(0, 80),
+      q.id,
+    ])
+  );
+}
+
 export function render(kind: Kind, data: any, o: RenderOpts): string {
   if (o.mode === "json") return json(data);
   switch (kind) {
@@ -157,6 +204,8 @@ export function render(kind: Kind, data: any, o: RenderOpts): string {
     case "taskdetail": return renderTaskDetail(data, o);
     case "board": return renderBoard(data, o);
     case "ready": return renderReady(data);
+    case "activity": return renderActivity(data, o);
+    case "inbox": return renderInbox(data);
     case "ok": return `${paint("✓", ANSI.green, o.color)} done`;
     default: return json(data);
   }

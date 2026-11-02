@@ -8,9 +8,9 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // POST { version? } — archive a single ticket (must be in a final status).
 export function POST(req: NextRequest, { params }: Ctx) {
-  return handleWrite(req, async () => {
+  return handleWrite(req, async (me) => {
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
-    return archiveTask(id, { version: body?.version });
+    return archiveTask(id, { version: body?.version, actorId: me?.id ?? null });
   });
 }

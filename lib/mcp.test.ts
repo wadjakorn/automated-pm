@@ -36,9 +36,11 @@ describe("MCP server", () => {
     const { client } = await connect(null);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      "pm_comment",
       "pm_create_task",
       "pm_get_task",
       "pm_get_workflow",
+      "pm_list_inbox",
       "pm_list_projects",
       "pm_list_ready",
       "pm_list_tasks",
@@ -73,6 +75,22 @@ describe("MCP server", () => {
     const got = await call("pm_get_task", { id: created.data.ticket_key });
     expect(got.data.id).toBe(created.data.id);
     expect(got.data.links).toEqual([]);
+  });
+
+  it("comments: a question reaches the inbox, an answer resolves it, history is on the task", async () => {
+    const agent = repo.createUser("mcp-asker", "pw", "agent");
+    const human = repo.createUser("mcp-answerer", "pw");
+    const p = repo.createProject("mcp-q");
+    const t = repo.createTask(p.id, { title: "q" });
+    const a = await connect(agent);
+    const q = await a.call("pm_comment", { id: t.id, body: "Which DB?", kind: "question" });
+    expect(q.data.kind).toBe("question");
+    expect((await a.call("pm_list_inbox", { project: "mcp-q" })).data).toHaveLength(1);
+    const h = await connect(human);
+    await h.call("pm_comment", { id: t.id, body: "SQLite", kind: "answer", reply_to: q.data.id });
+    expect((await a.call("pm_list_inbox", { project: "mcp-q" })).data).toHaveLength(0);
+    const got = await a.call("pm_get_task", { id: t.id });
+    expect(got.data.activity.map((e: any) => e.type)).toEqual(["created", "comment", "comment"]);
   });
 
   it("keeps the agent ready gate", async () => {

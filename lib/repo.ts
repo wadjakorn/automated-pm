@@ -1,5 +1,6 @@
 import { customAlphabet, nanoid } from "nanoid";
 import { getDb } from "./db";
+import { COMMENT_KINDS, logActivity, type ActorCtx } from "./activity";
 import { buildDefaultStateMachine, canTransition } from "./statemachine";
 import {
   badRequest,
@@ -30,6 +31,8 @@ import type {
   User,
   UserKind,
   PublicUser,
+  ActivityEntry,
+  InboxItem,
   LinkedTicket,
   ReadyTicket,
 } from "./types";
@@ -37,6 +40,14 @@ import type {
 // The status the poll routines treat as "ready to work". Entering it is the
 // owner's accept gate, so agents may not create tickets straight into it.
 export const READY_STATUS_KEY = "todo";
+
+// A project's ready status: its ready_status_key when that status still
+// exists, else the built-in default.
+export function readyStatusKeyFor(project: Project): string {
+  const k = project.ready_status_key;
+  if (k && getStateMachine(project.id).statuses.some((s) => s.key === k)) return k;
+  return READY_STATUS_KEY;
+}
 
 function normUserKind(k: unknown): UserKind {
   if (k === undefined || k === null || k === "") return "human";
@@ -308,6 +319,9 @@ export function updateProject(
     // null/"" = clear (fall back to first status); a string must be an existing
     // status key. Not guarded by confirm — it is not an identity/safety field.
     default_status_key?: string | null;
+    // The "ready to work" status for /ready and the agent create gate.
+    // undefined = leave; null/"" = clear (→ "todo"); else an existing status.
+    ready_status_key?: string | null;
     // Per-project theme (web UI). undefined = leave as-is; null/"" = clear (→
     // default pack/accent). A set value must be a known pack/accent. Not a
     // guarded field — theme is cosmetic, not identity/safety.
@@ -340,6 +354,12 @@ export function updateProject(
       : patch.default_status_key === null || patch.default_status_key === ""
         ? null
         : patch.default_status_key;
+  const readyStatusKey =
+    patch.ready_status_key === undefined
+      ? p.ready_status_key
+      : patch.ready_status_key === null || patch.ready_status_key === ""
+        ? null
+        : patch.ready_status_key;
   const themePack =
     patch.theme_pack === undefined
       ? p.theme_pack
@@ -385,6 +405,14 @@ export function updateProject(
   ) {
     throw badRequest(`unknown status "${defaultStatusKey}"`);
   }
+  // Same for the ready status.
+  if (
+    readyStatusKey !== null &&
+    readyStatusKey !== p.ready_status_key &&
+    !getStateMachine(p.id).statuses.some((s) => s.key === readyStatusKey)
+  ) {
+    throw badRequest(`unknown status "${readyStatusKey}"`);
+  }
   if (themePack !== null && !isThemePack(themePack)) {
     throw badRequest(`unknown theme pack "${themePack}"`);
   }
@@ -393,9 +421,9 @@ export function updateProject(
   }
   getDb()
     .prepare(
-      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, theme_pack=?, theme_accent=?, ticket_prefix=?, hidden=?, updated_at=? WHERE id=?"
+      "UPDATE projects SET name=?, description=?, remote_repo_url=?, default_status_key=?, ready_status_key=?, theme_pack=?, theme_accent=?, ticket_prefix=?, hidden=?, updated_at=? WHERE id=?"
     )
-    .run(name, description, remoteRepoUrl, defaultStatusKey, themePack, themeAccent, ticketPrefix, hidden ? 1 : 0, now(), p.id);
+    .run(name, description, remoteRepoUrl, defaultStatusKey, readyStatusKey, themePack, themeAccent, ticketPrefix, hidden ? 1 : 0, now(), p.id);
   return getProject(p.id);
 }
 
@@ -641,6 +669,10 @@ export function listTasks(
 // must not read as "no work"). A fleet of pollers pins distinct assignees to
 // split work with no overlap. A ticket that is still blocked — an incoming
 // `blocks` link from a live ticket not yet in a final status — is not ready.
+// The ready status is per project (ready_status_key, default `status`).
+// Owner accept gate: if the ticket's history records how it entered its
+// current status, that entry must have been made by a human. Tickets with no
+// such record (history predates task_activity) are grandfathered in.
 // `status` defaults to "todo" (the route passes CC_BRIDGE_READY_STATUS).
 export function listReadyTickets(
   opts: { projectRef?: string; assignee?: string; status?: string } = {}
@@ -661,7 +693,8 @@ export function listReadyTickets(
           AND p.remote_repo_url IS NOT NULL
           AND t.deleted_at IS NULL
           AND t.archived_at IS NULL
-          AND t.status_key = ?
+          AND t.status_key = COALESCE(
+            (SELECT s.key FROM statuses s WHERE s.project_id = p.id AND s.key = p.ready_status_key), ?)
           AND (? IS NULL OR p.id = ?)
           AND (? IS NULL OR t.assignee_id = ?)
           AND NOT EXISTS (
@@ -670,6 +703,14 @@ export function listReadyTickets(
               JOIN statuses bs ON bs.project_id = b.project_id AND bs.key = b.status_key
              WHERE l.target_id = t.id AND l.type = 'blocks'
                AND b.deleted_at IS NULL AND bs.is_final = 0)
+          AND NOT EXISTS (
+            SELECT 1 FROM task_activity e LEFT JOIN users eu ON eu.id = e.actor_id
+             WHERE e.seq = (
+                     SELECT MAX(e2.seq) FROM task_activity e2
+                      WHERE e2.task_id = t.id
+                        AND ((e2.type = 'status' AND json_extract(e2.payload, '$.to') = t.status_key)
+                          OR (e2.type = 'created' AND json_extract(e2.payload, '$.status') = t.status_key)))
+               AND COALESCE(eu.kind, 'anonymous') <> 'human')
         ORDER BY ${PRIORITY_ORDER_SQL}, t.rank`
     )
     .all(status, pid, pid, aid, aid) as any[];
@@ -760,9 +801,10 @@ export function createTask(
     throw badRequest(`unknown status "${statusKey}"`);
   // Owner accept gate: only a human may put a ticket straight into ready.
   // Agents (and anonymous callers) create it earlier and a human moves it.
-  if (data.actorKind !== undefined && data.actorKind !== "human" && statusKey === READY_STATUS_KEY)
+  const readyKey = readyStatusKeyFor(project);
+  if (data.actorKind !== undefined && data.actorKind !== "human" && statusKey === readyKey)
     throw forbidden(
-      `only a human can create a ticket directly in "${READY_STATUS_KEY}"; create it in an earlier status and let a human move it`
+      `only a human can create a ticket directly in "${readyKey}"; create it in an earlier status and let a human move it`
     );
   const assigneeId =
     data.assignee == null || data.assignee === "" ? null : resolveUserId(data.assignee);
@@ -799,6 +841,13 @@ export function createTask(
     );
   });
   insert();
+  logActivity({
+    taskId: tid,
+    projectId,
+    actorId: data.creatorId,
+    type: "created",
+    payload: { status: statusKey },
+  });
   return getTask(tid);
 }
 
@@ -852,7 +901,8 @@ export function updateTask(
     assignee?: string | null;
     // priority: undefined = leave as-is; otherwise validated against the scale.
     priority?: string;
-  }
+  },
+  ctx: ActorCtx = {}
 ): Task {
   const t = getTask(taskId);
   taskId = t.id; // caller may have passed a ticket key
@@ -878,7 +928,19 @@ export function updateTask(
       "UPDATE tasks SET title=?, description=?, assignee_id=?, priority=?, version=version+1, updated_at=? WHERE id=?"
     )
     .run(title, description, assigneeId, priority, now(), taskId);
-  return getTask(taskId);
+  const after = getTask(taskId);
+  // Record what changed. Descriptions can be huge, so only their lengths go
+  // into the log; the text itself lives on the ticket.
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  if (after.title !== t.title) changes.title = { from: t.title, to: after.title };
+  if ((after.description ?? "") !== (t.description ?? ""))
+    changes.description = { from: (t.description ?? "").length, to: (after.description ?? "").length };
+  if (after.assignee_id !== t.assignee_id)
+    changes.assignee = { from: t.assignee_username, to: after.assignee_username };
+  if (after.priority !== t.priority) changes.priority = { from: t.priority, to: after.priority };
+  if (Object.keys(changes).length)
+    logActivity({ taskId, projectId: t.project_id, actorId: ctx.actorId, type: "field", payload: { changes } });
+  return after;
 }
 
 export function moveTask(
@@ -887,7 +949,7 @@ export function moveTask(
   // expectFrom: only move if the ticket is still in this status — the claim
   // primitive. Without it a move to the current status is a harmless no-op
   // (callers such as capz-loop's stale-run recovery rely on that).
-  opts: { version?: number; rank?: number; expectFrom?: string } = {}
+  opts: { version?: number; rank?: number; expectFrom?: string } & ActorCtx = {}
 ): Task {
   const t = getTask(taskId);
   taskId = t.id;
@@ -905,24 +967,34 @@ export function moveTask(
       "UPDATE tasks SET status_key=?, rank=?, version=version+1, updated_at=? WHERE id=?"
     )
     .run(toStatus, rank, now(), taskId);
+  if (toStatus !== t.status_key)
+    logActivity({
+      taskId,
+      projectId: t.project_id,
+      actorId: opts.actorId,
+      type: "status",
+      payload: { from: t.status_key, to: toStatus },
+    });
   return getTask(taskId);
 }
 
-export function softDeleteTask(taskId: string): { ok: true } {
-  taskId = getTask(taskId).id;
+export function softDeleteTask(taskId: string, ctx: ActorCtx = {}): { ok: true } {
+  const t = getTask(taskId);
   getDb()
     .prepare("UPDATE tasks SET deleted_at=?, version=version+1, updated_at=? WHERE id=?")
-    .run(now(), now(), taskId);
+    .run(now(), now(), t.id);
+  logActivity({ taskId: t.id, projectId: t.project_id, actorId: ctx.actorId, type: "deleted" });
   return { ok: true };
 }
 
-export function restoreTask(taskId: string): Task {
+export function restoreTask(taskId: string, ctx: ActorCtx = {}): Task {
   const t = getTask(taskId, true);
   taskId = t.id;
   if (!t.deleted_at) return t;
   getDb()
     .prepare("UPDATE tasks SET deleted_at=NULL, version=version+1, updated_at=? WHERE id=?")
     .run(now(), taskId);
+  logActivity({ taskId, projectId: t.project_id, actorId: ctx.actorId, type: "restored" });
   return getTask(taskId);
 }
 
@@ -938,7 +1010,7 @@ function isFinalStatus(projectId: string, statusKey: string): boolean {
   );
 }
 
-export function archiveTask(taskId: string, opts: { version?: number } = {}): Task {
+export function archiveTask(taskId: string, opts: { version?: number } & ActorCtx = {}): Task {
   const t = getTask(taskId);
   taskId = t.id;
   assertVersion(t, opts.version);
@@ -948,16 +1020,18 @@ export function archiveTask(taskId: string, opts: { version?: number } = {}): Ta
   getDb()
     .prepare("UPDATE tasks SET archived_at=?, version=version+1, updated_at=? WHERE id=?")
     .run(now(), now(), taskId);
+  logActivity({ taskId, projectId: t.project_id, actorId: opts.actorId, type: "archived" });
   return getTask(taskId);
 }
 
-export function unarchiveTask(taskId: string): Task {
+export function unarchiveTask(taskId: string, ctx: ActorCtx = {}): Task {
   const t = getTask(taskId);
   taskId = t.id;
   if (!t.archived_at) return t;
   getDb()
     .prepare("UPDATE tasks SET archived_at=NULL, version=version+1, updated_at=? WHERE id=?")
     .run(now(), taskId);
+  logActivity({ taskId, projectId: t.project_id, actorId: ctx.actorId, type: "unarchived" });
   return getTask(taskId);
 }
 
@@ -965,7 +1039,8 @@ export function unarchiveTask(taskId: string): Task {
 // Returns the archived tickets. Throws if the status isn't final.
 export function bulkArchiveColumn(
   projectId: string,
-  statusKey: string
+  statusKey: string,
+  ctx: ActorCtx = {}
 ): { archived: Task[] } {
   projectId = getProject(projectId).id;
   if (!isFinalStatus(projectId, statusKey))
@@ -981,7 +1056,10 @@ export function bulkArchiveColumn(
     const upd = db.prepare(
       "UPDATE tasks SET archived_at=?, version=version+1, updated_at=? WHERE id=?"
     );
-    for (const r of rows) upd.run(ts, ts, r.id);
+    for (const r of rows) {
+      upd.run(ts, ts, r.id);
+      logActivity({ taskId: r.id, projectId, actorId: ctx.actorId, type: "archived" });
+    }
   });
   tx();
   return { archived: rows.map((r) => getTask(r.id)) };
@@ -1014,7 +1092,8 @@ function toLinkedTicket(row: any, viewerId: string): LinkedTicket {
 export function createLink(
   thisId: string,
   targetRef: string,
-  option: LinkOption
+  option: LinkOption,
+  ctx: ActorCtx = {}
 ): LinkedTicket {
   // Both endpoints may arrive as a nanoid or a ticket key; resolve to storage
   // ids before building the edge so links are always keyed consistently.
@@ -1038,7 +1117,15 @@ export function createLink(
     throw e;
   }
   const row = getDb().prepare("SELECT * FROM task_links WHERE id=?").get(lid);
-  return toLinkedTicket(row, thisId);
+  const linked = toLinkedTicket(row, thisId);
+  logActivity({
+    taskId: thisId,
+    projectId: getTask(thisId).project_id,
+    actorId: ctx.actorId,
+    type: "link",
+    payload: { verb: linked.verb, label: linked.label, other: otherId },
+  });
+  return linked;
 }
 
 export function listLinksFor(taskId: string): LinkedTicket[] {
@@ -1051,8 +1138,164 @@ export function listLinksFor(taskId: string): LinkedTicket[] {
   return rows.map((r) => toLinkedTicket(r, taskId));
 }
 
-export function removeLink(linkId: string): { ok: true } {
-  const r = getDb().prepare("DELETE FROM task_links WHERE id=?").run(linkId);
-  if (r.changes === 0) throw notFound("link");
+export function removeLink(linkId: string, ctx: ActorCtx & { viewerId?: string } = {}): { ok: true } {
+  const row = getDb().prepare("SELECT * FROM task_links WHERE id=?").get(linkId) as any;
+  if (!row) throw notFound("link");
+  getDb().prepare("DELETE FROM task_links WHERE id=?").run(linkId);
+  const viewer = ctx.viewerId ?? row.source_id;
+  const t = getTask(viewer, true);
+  logActivity({
+    taskId: t.id,
+    projectId: t.project_id,
+    actorId: ctx.actorId,
+    type: "unlink",
+    payload: { verb: row.type, other: row.source_id === t.id ? row.target_id : row.source_id },
+  });
   return { ok: true };
+}
+
+// ---------------- Activity, comments, inbox ----------------
+
+const ACTIVITY_SELECT = `
+  SELECT a.*, u.username AS actor_username, u.kind AS actor_kind,
+         t.title AS task_title, t.ticket_number AS ticket_number, p.ticket_prefix AS ticket_prefix
+  FROM task_activity a
+  LEFT JOIN users u ON u.id = a.actor_id
+  JOIN tasks t ON t.id = a.task_id
+  JOIN projects p ON p.id = a.project_id`;
+
+function mapActivity(r: any): ActivityEntry {
+  const { ticket_number, ticket_prefix, payload, ...rest } = r;
+  return {
+    ...rest,
+    payload: payload ? JSON.parse(payload) : null,
+    ticket_key:
+      ticket_prefix != null && ticket_number != null
+        ? formatTicketKey(ticket_prefix, ticket_number)
+        : null,
+  };
+}
+
+const MAX_COMMENT_CHARS = 20000;
+
+// Add a comment. kind: note (default) | question (opens an inbox item) |
+// answer (with reply_to = a question on the same ticket, resolves it) |
+// handoff (a summary for whoever picks the ticket up next).
+export function addComment(
+  taskRef: string,
+  data: { body?: unknown; kind?: unknown; reply_to?: unknown },
+  ctx: ActorCtx = {}
+): ActivityEntry {
+  const t = getTask(taskRef);
+  if (typeof data.body !== "string" || !data.body.trim()) throw badRequest("body is required");
+  if (data.body.length > MAX_COMMENT_CHARS)
+    throw badRequest(`comment is longer than ${MAX_COMMENT_CHARS} characters`);
+  const kind = data.kind === undefined || data.kind === null || data.kind === "" ? "note" : data.kind;
+  if (!COMMENT_KINDS.includes(kind as any))
+    throw badRequest(`unknown comment kind "${String(kind)}" (note|question|answer|handoff)`);
+  let replyTo: string | null = null;
+  if (data.reply_to !== undefined && data.reply_to !== null && data.reply_to !== "") {
+    if (typeof data.reply_to !== "string") throw badRequest("reply_to must be a comment id");
+    const parent = getDb()
+      .prepare("SELECT * FROM task_activity WHERE id=? AND type='comment'")
+      .get(data.reply_to) as any;
+    if (!parent || parent.task_id !== t.id) throw notFound("comment on this ticket");
+    replyTo = parent.id;
+  }
+  const db = getDb();
+  const aid = db.transaction(() => {
+    const newId = logActivity({
+      taskId: t.id,
+      projectId: t.project_id,
+      actorId: ctx.actorId,
+      type: "comment",
+      kind: kind as any,
+      body: data.body as string,
+      replyTo,
+    });
+    // An answer to an open question closes it.
+    if (kind === "answer" && replyTo)
+      db.prepare(
+        "UPDATE task_activity SET resolved_at=? WHERE id=? AND kind='question' AND resolved_at IS NULL"
+      ).run(now(), replyTo);
+    return newId;
+  })();
+  return getActivity(aid);
+}
+
+export function getActivity(activityId: string): ActivityEntry {
+  const r = getDb().prepare(`${ACTIVITY_SELECT} WHERE a.id=?`).get(activityId);
+  if (!r) throw notFound("activity");
+  return mapActivity(r);
+}
+
+// Mark a question resolved without writing an answer (e.g. settled elsewhere).
+export function resolveComment(commentId: string, ctx: ActorCtx = {}): ActivityEntry {
+  const c = getActivity(commentId);
+  if (c.type !== "comment" || c.kind !== "question") throw badRequest("only questions can be resolved");
+  if (!c.resolved_at) {
+    getDb().prepare("UPDATE task_activity SET resolved_at=? WHERE id=?").run(now(), c.id);
+    logActivity({
+      taskId: c.task_id,
+      projectId: c.project_id,
+      actorId: ctx.actorId,
+      type: "field",
+      payload: { changes: { question: { from: "open", to: "resolved" } }, comment: c.id },
+    });
+  }
+  return getActivity(c.id);
+}
+
+function clampLimit(limit: unknown, def = 200, max = 1000): number {
+  const n = Number(limit);
+  return Number.isInteger(n) && n > 0 ? Math.min(n, max) : def;
+}
+
+// One ticket's history, oldest first. `since` = only rows with seq > since.
+export function listActivity(
+  taskRef: string,
+  opts: { since?: unknown; limit?: unknown; type?: string } = {}
+): ActivityEntry[] {
+  const t = getTask(taskRef, true);
+  const since = Number(opts.since) || 0;
+  const rows = getDb()
+    .prepare(
+      `${ACTIVITY_SELECT} WHERE a.task_id=? AND a.seq>? ${opts.type ? "AND a.type=?" : ""} ORDER BY a.seq LIMIT ?`
+    )
+    .all(...[t.id, since, ...(opts.type ? [opts.type] : []), clampLimit(opts.limit)]);
+  return rows.map(mapActivity);
+}
+
+// Everything that happened since a cursor, across tickets (optionally one
+// project) — the feed agents and live views poll. Oldest first.
+export function listEvents(opts: { since?: unknown; project?: string; limit?: unknown } = {}): ActivityEntry[] {
+  const since = Number(opts.since) || 0;
+  const pid = opts.project ? getProject(opts.project).id : null;
+  const rows = getDb()
+    .prepare(`${ACTIVITY_SELECT} WHERE a.seq>? AND (? IS NULL OR a.project_id=?) ORDER BY a.seq LIMIT ?`)
+    .all(since, pid, pid, clampLimit(opts.limit));
+  return rows.map(mapActivity);
+}
+
+// Open questions on live tickets, oldest first — what is waiting on a human.
+export function listInbox(opts: { project?: string; assignee?: string } = {}): InboxItem[] {
+  const pid = opts.project ? getProject(opts.project).id : null;
+  const aid = opts.assignee ? resolveUserId(opts.assignee) : null;
+  const rows = getDb()
+    .prepare(
+      `SELECT a.*, u.username AS actor_username, u.kind AS actor_kind,
+              t.title AS task_title, t.ticket_number AS ticket_number, p.ticket_prefix AS ticket_prefix,
+              p.name AS project_name, t.status_key AS task_status, au.username AS task_assignee
+         FROM task_activity a
+         LEFT JOIN users u ON u.id = a.actor_id
+         JOIN tasks t ON t.id = a.task_id
+         JOIN projects p ON p.id = a.project_id
+         LEFT JOIN users au ON au.id = t.assignee_id
+        WHERE a.type='comment' AND a.kind='question' AND a.resolved_at IS NULL
+          AND t.deleted_at IS NULL AND p.deleted_at IS NULL
+          AND (? IS NULL OR a.project_id=?) AND (? IS NULL OR t.assignee_id=?)
+        ORDER BY a.seq`
+    )
+    .all(pid, pid, aid, aid);
+  return rows.map((r: any) => mapActivity(r) as InboxItem);
 }

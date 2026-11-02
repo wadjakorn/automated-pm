@@ -56,7 +56,7 @@ ticket, exactly one wins and the other gets `409 status_changed`.
    > `repo` URL — follow the repo's conventions, run its tests, open a PR with
    > `gh pr create`. On success move it to Code Review (`pm task move --id <id>
    > --status completed`). If blocked, `pm task move --id <id> --status blocked`
-   > and append a STATUS note to the ticket describing why. Never set
+   > and post the question with `pm comment --id <id> --kind question --body "…"`. Never set
    > `ANTHROPIC_API_KEY`. Keep secrets out of the repo.
 
    Omit `--project` to work every opted-in project at once. Running a **fleet**

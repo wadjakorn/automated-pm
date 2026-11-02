@@ -11,6 +11,9 @@ export interface Project {
   // Status key new tasks land in when none is given. Null → first status.
   // A stale key (status since removed) also falls back to the first status.
   default_status_key: string | null;
+  // Status that means "ready to work" for /ready and the agent create gate.
+  // Null → "todo". A stale key (status removed) also falls back to "todo".
+  ready_status_key: string | null;
   // Per-project theme (web UI): the theme pack + accent applied when this
   // project is selected. Null → default pack/accent. Light/dark MODE is a
   // separate per-browser preference and is not stored on the project.
@@ -148,4 +151,35 @@ export interface LinkedTicket {
     project_id: string;
     deleted_at: string | null;
   };
+}
+
+// One row of a ticket's history (GET /api/tasks/:id/activity, /api/events).
+// type "comment" carries kind/body/reply_to/resolved_at; other types carry a
+// payload: status {from,to}, created {status}, field {changes: {name: {from,to}}}
+// (description changes record lengths only), link/unlink {verb,label,other}.
+export interface ActivityEntry {
+  seq: number;
+  id: string;
+  task_id: string;
+  project_id: string;
+  type: string;
+  kind: string | null;
+  body: string | null;
+  reply_to: string | null;
+  payload: any;
+  resolved_at: string | null;
+  created_at: string;
+  actor_id: string | null;
+  actor_username: string | null;
+  actor_kind: string | null;
+  // Joined for feeds that span tickets (/api/events, inbox).
+  ticket_key?: string | null;
+  task_title?: string;
+}
+
+// An open question waiting for a human (GET /api/inbox).
+export interface InboxItem extends ActivityEntry {
+  project_name: string;
+  task_status: string;
+  task_assignee: string | null;
 }

@@ -175,6 +175,8 @@ describe("looking a task up by ticket key", () => {
     // Give a second task the ambiguous id, as an older nanoid could have been.
     const other = repo.createTask(p.id, { title: "ambiguous" });
     const spoofId = "AMB-00012345";
+    // (its history rows reference the old id; ids never change in the app)
+    getDb().prepare("DELETE FROM task_activity WHERE task_id=?").run(other.id);
     getDb().prepare("UPDATE tasks SET id=? WHERE id=?").run(spoofId, other.id);
 
     expect(repo.isTicketKey(spoofId)).toBe(true); // shape alone says "key"…

@@ -103,6 +103,26 @@ function migrate(db: Database.Database) {
       UNIQUE(source_id, target_id, type)
     );
 
+    -- Append-only ticket history: comments plus every state change. seq is a
+    -- global cursor (GET /api/events?since=). A question comment stays open
+    -- until answered (resolved_at). Events are kept when a task is soft-deleted.
+    CREATE TABLE IF NOT EXISTS task_activity (
+      seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+      id          TEXT NOT NULL UNIQUE,
+      task_id     TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id  TEXT NOT NULL,
+      actor_id    TEXT REFERENCES users(id),
+      type        TEXT NOT NULL,
+      kind        TEXT,
+      body        TEXT,
+      reply_to    TEXT,
+      payload     TEXT,
+      resolved_at TEXT,
+      created_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_activity_task ON task_activity(task_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_activity_open ON task_activity(kind, resolved_at);
+
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_source ON task_links(source_id);
     CREATE INDEX IF NOT EXISTS idx_task_links_target ON task_links(target_id);
@@ -237,6 +257,11 @@ function migrate(db: Database.Database) {
   // tasks.archived_at). Nullable, no default → old rows stay un-archived.
   if (!projectCols.has("archived_at")) {
     db.exec("ALTER TABLE projects ADD COLUMN archived_at TEXT");
+  }
+  // The status poll routines treat as ready (the owner's accept gate). Null →
+  // the built-in default ("todo"). Lets a project with custom statuses opt in.
+  if (!projectCols.has("ready_status_key")) {
+    db.exec("ALTER TABLE projects ADD COLUMN ready_status_key TEXT");
   }
 
   // Actor kind: 'human' or 'agent'. Agents are trusted to do work but not to

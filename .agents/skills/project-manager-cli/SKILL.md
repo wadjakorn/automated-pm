@@ -142,13 +142,23 @@ pm task link rm   --id <id|key> --link <linkId>
 pm board        --project <id|name> [--view summary]     # columns view: tasks grouped by status
 pm ready        [--project <id|name>] [--assignee <id|username>]   # ready, unblocked tickets (+repo, +desc, +ticket_key, +version); needs PM_TOKEN; unknown ref → not_found
 
+# Comments & history — report progress with comments, not description edits.
+# kind: note (default) | question (lands in the owner's inbox) |
+#       answer (--reply-to <question id> resolves it) | handoff (summary for the next owner)
+pm comment --id <id|key> --body <text> [--kind <k>] [--reply-to <commentId>]
+pm comment --id <id|key> --body-file <path|->          # long markdown from a file or stdin
+pm log     --id <id|key> [--since <seq>]               # comments + every change, oldest first
+pm inbox   [--project <id|name>] [--assignee <u>]      # open questions waiting for a human
+pm resolve --comment <commentId>                       # close a question without answering
+pm events  [--since <seq>] [--project <id|name>]       # cross-ticket change feed (poll with last seq)
+
 # changing --name or --remote-url is a GUARDED edit: it needs --confirm (else
 # bad_request). --description and --default-status are NOT guarded. --remote-url
 # '' clears the URL; --default-status '' clears the default (→ first status).
 # --default-status sets the status new tasks land in when created without an
 # explicit --status; the key must be an existing status (else bad_request), and
 # a stale default (its status later removed) falls back to the first status.
-pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--confirm]
+pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--ready-status <key>] [--confirm]
 pm project delete --project <id|name>                    # soft delete (recoverable via the UI/Trash)
 
 # --hidden hides a status column from the WEB board only (project-level; every
@@ -185,6 +195,15 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
   `403 forbidden` — `todo` is the owner's accept gate. Create it in `backlog`
   and let a human move it. Kind is set on the host only:
   `npm run db -- user-kind <user> <human|agent>`.
+- **Talk through comments.** Progress goes in `pm comment` (kind `note`),
+  never by rewriting the description — the description is the spec. When you
+  need a human decision, post a `question` and move the ticket to `blocked`;
+  the owner answers from their inbox (`pm inbox`) and the answer shows in
+  `pm log`. Leave a `handoff` comment when you stop mid-way.
+- **Ready means a human accepted it.** `pm ready` only returns tickets whose
+  last move into the ready status (`todo`, or the project's `--ready-status`)
+  was made by a human. Moving a ticket into `todo` yourself does not make it
+  ready for pollers.
 - **Optimistic locking.** `--version` is optional. Omit it → CLI reads the
   current version then writes (convenient, last-writer-wins). Pass `--version`
   when you must not clobber a concurrent edit; on stale you get `conflict` with
@@ -233,7 +252,8 @@ stateless, same `PM_TOKEN` as the CLI). Same rules as the API — it calls the
 same code. Tools: `pm_whoami`, `pm_list_projects`, `pm_get_workflow`,
 `pm_list_tasks` (summary by default), `pm_list_ready`, `pm_get_task` (full,
 with `next_statuses` and links), `pm_create_task`, `pm_update_task`,
-`pm_move_task` (`from` = claim). Errors come back as `{error, message, hint}`.
+`pm_move_task` (`from` = claim), `pm_comment`, `pm_list_inbox`. `pm_get_task`
+includes the ticket's last 50 history entries. Errors come back as `{error, message, hint}`.
 Admin actions (delete project, state machine, users, tokens) are CLI/web only.
 
 ```bash
