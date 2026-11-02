@@ -13,6 +13,7 @@ const EXEMPT = new Set([
   "app/api/auth/me/route.ts", // resolveActor, returns a literal null
   "app/api/auth/token/route.ts", // password check, rotates the caller's token
   "app/api/uploads/[id]/route.ts", // public image bytes (immutable, unguessable ids)
+  "app/api/mcp/route.ts", // resolveActor per request; write tools enforce write-token
 ]);
 
 function routeFiles(dir: string): string[] {

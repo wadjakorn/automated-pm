@@ -180,6 +180,23 @@ none is a `cli_error`; an unknown command returns `did_you_mean`.
   `bad_request`. `pm task list` auto-sorts each column `now → high → medium → low`
   then by rank. Filter with `--priority <p>`.
 
+## MCP (Claude Code, Codex)
+
+The server also speaks MCP at `http://localhost:3000/api/mcp` (Streamable HTTP,
+stateless, same `PM_TOKEN` as the CLI). Same rules as the API — it calls the
+same code. Tools: `pm_whoami`, `pm_list_projects`, `pm_get_workflow`,
+`pm_list_tasks` (summary by default), `pm_list_ready`, `pm_get_task` (full,
+with `next_statuses` and links), `pm_create_task`, `pm_update_task`,
+`pm_move_task` (`from` = claim). Errors come back as `{error, message, hint}`.
+Admin actions (delete project, state machine, users, tokens) are CLI/web only.
+
+```bash
+# Claude Code (the token stays an env reference, not a literal)
+claude mcp add -s user -t http pm http://localhost:3000/api/mcp -H 'Authorization: Bearer ${PM_TOKEN}'
+# Codex
+codex mcp add pm --url http://localhost:3000/api/mcp --bearer-token-env-var PM_TOKEN
+```
+
 ## Typical workflow
 
 ```bash

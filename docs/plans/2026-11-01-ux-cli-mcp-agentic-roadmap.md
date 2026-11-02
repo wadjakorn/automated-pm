@@ -1,6 +1,6 @@
 # แผนพัฒนา UX, CLI และ MCP สำหรับคนและ Agentic AI
 
-วันที่ 2026-11-01 · **v2 2026-11-02** · สถานะ: กำลังทำ M1
+วันที่ 2026-11-01 · **v2 2026-11-02** · สถานะ: M1 เสร็จ (#38-#42), ถัดไป M2
 
 ## v2: แผนที่ใช้ทำงานจริง
 
@@ -22,15 +22,15 @@
 | lease, heartbeat, idempotency, labels, subtask, artifacts, agent runs, routing, webhook | ย้ายไป M4 | ทำเมื่อมีหลักฐานว่าต้องการ |
 | dietpi | ตัดออก | เลิกใช้แล้ว เครื่องนี้เป็น instance เดียว |
 
-### M1 ปิดรูรั่ว (กำลังทำ)
+### M1 ปิดรูรั่ว (เสร็จ 2026-11-02)
 
 | PR | ขอบเขต |
 |---|---|
-| Claim และประตูอนุมัติ | `expect_from` ใน `PATCH /api/tasks/:id` + `pm task move --from`, คอลัมน์ `users.kind` (`human`/`agent`), agent สร้างตั๋วลง `todo` ไม่ได้, แก้ skill `capz-build-ticket` ให้ใช้ `--from todo` และข้ามการ claim เมื่อเป็นงาน `recover:` |
-| Auth | wrapper กลางที่ resolve actor, Bearer ผิดได้ `401`, `PM_AUTH_MODE=write-token`, `pm token rotate`, แก้เอกสารที่อ้างว่า `pm login` คืน token |
-| CLI และ API | B4-B8, input ผิดได้ `400`, `did_you_mean`, `ready` ไม่คืนตั๋วที่ยังติด blocker, `view=summary` |
-| Web | sidebar มือถือ, แถบบนของ drawer, ย้ายสถานะแล้ว drawer ไม่ปิด, quick add ต่อเนื่อง, หรี่คอลัมน์ที่ลากไปไม่ได้, หน้าแรกไม่เลือกโปรเจกต์ที่ซ่อน, ลากด้วยคีย์บอร์ด |
-| MCP แบบบาง | `/api/mcp` (Streamable HTTP, stateless, Bearer เดิม) ราว 8 tools ตั้งค่าให้ Claude Code และ Codex บนเครื่องนี้, อัปเดต skill และเอกสาร |
+| Claim และประตูอนุมัติ (#38, capz#156) | `expect_from` ใน `PATCH /api/tasks/:id` + `pm task move --from`, คอลัมน์ `users.kind` (`human`/`agent`), agent สร้างตั๋วลง `todo` ไม่ได้, แก้ skill `capz-build-ticket` ให้ใช้ `--from todo` และข้ามการ claim เมื่อเป็นงาน `recover:` |
+| Auth (#40) | wrapper กลางที่ resolve actor, Bearer ผิดได้ `401`, `PM_AUTH_MODE=write-token`, `pm token rotate`, แก้เอกสารที่อ้างว่า `pm login` คืน token |
+| CLI และ API (#41) | B4-B9, input ผิดได้ `400`, `did_you_mean`, `ready` ไม่คืนตั๋วที่ยังติด blocker, `view=summary` |
+| Web (#39) | sidebar มือถือ, แถบบนของ drawer, ย้ายสถานะแล้ว drawer ไม่ปิด, quick add ต่อเนื่อง, หรี่คอลัมน์ที่ลากไปไม่ได้, หน้าแรกไม่เลือกโปรเจกต์ที่ซ่อน, ลากด้วยคีย์บอร์ด |
+| MCP แบบบาง (#42) | `/api/mcp` (Streamable HTTP, stateless, Bearer เดิม) 9 tools ตั้งค่าให้ Claude Code และ Codex บนเครื่องนี้, อัปเดต skill และเอกสาร |
 
 **ลำดับ deploy:** merge แล้ว `docker compose up -d --build` จากนั้นจึงแก้ skill ของ capz-loop ทุกการเปลี่ยนแปลงฝั่ง server เข้ากันได้กับผู้เรียกเดิม
 
