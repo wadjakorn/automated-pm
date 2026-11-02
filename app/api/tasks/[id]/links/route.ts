@@ -14,9 +14,9 @@ export function GET(req: NextRequest, { params }: Ctx) {
 // POST { targetRef, type } -> create one link. `type` is a UI option
 // (blocks|blocked-by|causes|caused-by|relates); the repo normalizes direction.
 export function POST(req: NextRequest, { params }: Ctx) {
-  return handleWrite(req, async () => {
+  return handleWrite(req, async (me) => {
     const { id } = await params;
     const body = await req.json();
-    return createLink(id, body.targetRef, body.type);
+    return createLink(id, body.targetRef, body.type, { actorId: me?.id ?? null });
   });
 }

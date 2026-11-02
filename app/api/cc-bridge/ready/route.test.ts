@@ -18,7 +18,7 @@ beforeAll(async () => {
   const p = repo.createProject("route-proj");
   repo.updateProject(p.id, { remote_repo_url: "git@github.com:me/r.git", confirm: true });
   const t = repo.createTask(p.id, { title: "ready one" });
-  repo.moveTask(t.id, "todo");
+  repo.moveTask(t.id, "todo", { actorId: repo.createUser("owner", "pw").id });
   readyId = t.id;
 });
 

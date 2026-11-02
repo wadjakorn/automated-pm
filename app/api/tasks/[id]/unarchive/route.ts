@@ -7,5 +7,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 export function POST(req: NextRequest, { params }: Ctx) {
-  return handleWrite(req, async () => unarchiveTask((await params).id));
+  return handleWrite(req, async (me) =>
+    unarchiveTask((await params).id, { actorId: me?.id ?? null })
+  );
 }

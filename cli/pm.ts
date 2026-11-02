@@ -74,6 +74,7 @@ export const COMMANDS = [
   "task delete", "task restore", "task archive", "task unarchive", "task archive-final",
   "task link add", "task link list", "task link rm",
   "board", "ready", "help",
+  "comment", "log", "inbox", "resolve", "events",
 ];
 
 function editDistance(a: string, b: string): number {
@@ -197,7 +198,7 @@ const HELP = `pm — Project Manager CLI
   pm project create --name <name> [--description <text>]
   pm project list [--include-archived] [--include-deleted]
   # changing --name or --remote-url is a guarded edit: it needs --confirm.
-  pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--hidden <true|false>] [--confirm]
+  pm project update --project <id|name> [--name <new>] [--description <text>] [--remote-url <url>] [--default-status <key>] [--ready-status <key>] [--hidden <true|false>] [--confirm]
   pm project delete --project <id|name>
   pm project restore --project <id|name>              # bring a trashed project back
   pm project archive --project <id|name>              # file off the sidebar (stays live)
@@ -242,6 +243,14 @@ const HELP = `pm — Project Manager CLI
   pm task link rm   --id <id|key> --link <linkId>
 
   pm board --project <id|name> [--view summary]   # columns view: tasks grouped by status
+
+  # comments & history — kind: note (default) | question (goes to the inbox) |
+  # answer (--reply-to <question id> resolves it) | handoff (summary for the next owner)
+  pm comment --id <id|key> (--body <text> | --body-file <path|->) [--kind <k>] [--reply-to <commentId>]
+  pm log --id <id|key> [--since <seq>] [--limit <n>]      # ticket history: comments + changes
+  pm inbox [--project <id|name>] [--assignee <id|username>]   # open questions waiting for a human
+  pm resolve --comment <commentId>                         # close a question without answering
+  pm events [--since <seq>] [--project <id|name>] [--limit <n>]   # cross-ticket change feed
   # values that start with -- use the = form: --title=--draft--
   pm ready [--project <id|name>] [--assignee <id|username>]   # ready tickets (repo + desc) for the poll routine
 `;
@@ -287,7 +296,7 @@ async function main() {
   }
 
   // Single-word commands: flags live in [rawAction, ...rest].
-  if (group === "login" || group === "whoami" || group === "board" || group === "ready") {
+  if (["login", "whoami", "board", "ready", "comment", "log", "inbox", "resolve", "events"].includes(group)) {
     const sf = parseFlags([rawAction, ...rest].filter((x): x is string => !!x));
     const bareS = bareValueFlag(sf);
     if (bareS) fail(`--${bareS} needs a value (use --${bareS}=<value> if it starts with --)`);
@@ -300,6 +309,51 @@ async function main() {
           password: need(sf, "password"),
         })
       );
+    if (group === "comment") {
+      // --body <text> or --body-file <path|-> (stdin) for long markdown.
+      let body: string | undefined = typeof sf.body === "string" ? sf.body : undefined;
+      if (typeof sf["body-file"] === "string")
+        body = readFileSync(sf["body-file"] === "-" ? 0 : sf["body-file"], "utf8");
+      if (!body?.trim()) fail("--body or --body-file is required");
+      return emit(
+        "activity",
+        await api("POST", `/api/tasks/${encodeURIComponent(need(sf, "id"))}/comments`, {
+          body,
+          kind: typeof sf.kind === "string" ? sf.kind : undefined,
+          reply_to: typeof sf["reply-to"] === "string" ? sf["reply-to"] : undefined,
+        })
+      );
+    }
+    if (group === "log") {
+      const qs = new URLSearchParams();
+      if (typeof sf.since === "string") qs.set("since", sf.since);
+      if (typeof sf.limit === "string") qs.set("limit", sf.limit);
+      const q = qs.toString() ? `?${qs}` : "";
+      return emit(
+        "activity",
+        await api("GET", `/api/tasks/${encodeURIComponent(need(sf, "id"))}/activity${q}`)
+      );
+    }
+    if (group === "inbox") {
+      const qs = new URLSearchParams();
+      if (typeof sf.project === "string") qs.set("project", sf.project);
+      if (typeof sf.assignee === "string") qs.set("assignee", sf.assignee);
+      const q = qs.toString() ? `?${qs}` : "";
+      return emit("inbox", await api("GET", `/api/inbox${q}`));
+    }
+    if (group === "resolve")
+      return emit(
+        "activity",
+        await api("POST", `/api/comments/${encodeURIComponent(need(sf, "comment"))}/resolve`)
+      );
+    if (group === "events") {
+      const qs = new URLSearchParams();
+      if (typeof sf.since === "string") qs.set("since", sf.since);
+      if (typeof sf.project === "string") qs.set("project", sf.project);
+      if (typeof sf.limit === "string") qs.set("limit", sf.limit);
+      const q = qs.toString() ? `?${qs}` : "";
+      return emit("activity", await api("GET", `/api/events${q}`));
+    }
     if (group === "ready") {
       const qs = new URLSearchParams();
       if (typeof sf.project === "string") qs.set("project", sf.project);
@@ -399,6 +453,9 @@ async function main() {
           // --default-status '' clears it (→ first status); server validates key.
           default_status_key:
             typeof f["default-status"] === "string" ? f["default-status"] : undefined,
+          // --ready-status '' clears it (→ todo); the ready/accept-gate status.
+          ready_status_key:
+            typeof f["ready-status"] === "string" ? f["ready-status"] : undefined,
           // --hidden true|false hides/shows the project in the web sidebar.
           hidden:
             f.hidden === undefined ? undefined : f.hidden === "true" || f.hidden === true,

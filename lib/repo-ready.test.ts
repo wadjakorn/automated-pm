@@ -10,12 +10,19 @@ beforeAll(async () => {
   repo = await import("./repo");
 });
 
+// The human who accepts tickets into todo (the owner accept gate).
+let ownerId: string | null = null;
+function owner(): string {
+  ownerId ??= repo.createUser("ready-owner", "pw").id;
+  return ownerId;
+}
+
 // Helper: a project WITH a repo URL (opted in) holding one ready (todo) task.
 function seedReady(name: string, title: string, priority?: string) {
   const p = repo.createProject(name);
   repo.updateProject(p.id, { remote_repo_url: "git@github.com:me/repo.git", confirm: true });
   const t = repo.createTask(p.id, { title, priority });
-  repo.moveTask(t.id, "todo");
+  repo.moveTask(t.id, "todo", { actorId: owner() });
   return { p, t };
 }
 
@@ -25,7 +32,7 @@ describe("listReadyTickets", () => {
     // A project WITHOUT a repo URL must never appear, even with a ready task.
     const noRepo = repo.createProject("ready-no-repo");
     const nrTask = repo.createTask(noRepo.id, { title: "invisible" });
-    repo.moveTask(nrTask.id, "todo");
+    repo.moveTask(nrTask.id, "todo", { actorId: owner() });
 
     const rows = repo.listReadyTickets();
     const ids = rows.map((r) => r.ticket);
@@ -45,7 +52,7 @@ describe("listReadyTickets", () => {
     repo.updateProject(p.id, { remote_repo_url: "git@github.com:me/b.git", confirm: true });
     const backlog = repo.createTask(p.id, { title: "still backlog" }); // not moved → backlog
     const del = repo.createTask(p.id, { title: "deleted" });
-    repo.moveTask(del.id, "todo");
+    repo.moveTask(del.id, "todo", { actorId: owner() });
     repo.softDeleteTask(del.id);
 
     const ids = repo.listReadyTickets({ projectRef: p.id }).map((r) => r.ticket);
@@ -70,9 +77,9 @@ describe("listReadyTickets", () => {
     const p = repo.createProject("ready-proj-d");
     repo.updateProject(p.id, { remote_repo_url: "git@github.com:me/d.git", confirm: true });
     const mine = repo.createTask(p.id, { title: "mine", assignee: "claude-a" });
-    repo.moveTask(mine.id, "todo");
+    repo.moveTask(mine.id, "todo", { actorId: owner() });
     const unassigned = repo.createTask(p.id, { title: "nobody" });
-    repo.moveTask(unassigned.id, "todo");
+    repo.moveTask(unassigned.id, "todo", { actorId: owner() });
 
     const byUser = repo.listReadyTickets({ assignee: "claude-a" }).map((r) => r.ticket);
     expect(byUser).toContain(mine.id);

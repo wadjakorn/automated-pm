@@ -17,6 +17,7 @@ function project(id: string, extra: Partial<Project> = {}): Project {
     description: null,
     remote_repo_url: null,
     default_status_key: null,
+    ready_status_key: null,
     theme_pack: null,
     theme_accent: null,
     ticket_prefix: null,

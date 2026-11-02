@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { removeLink } from "@/lib/repo";
+import { getTask, removeLink } from "@/lib/repo";
 import { handleWrite } from "@/lib/actor";
 
 export const dynamic = "force-dynamic";
@@ -8,5 +8,9 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string; linkId: string }> };
 
 export function DELETE(req: NextRequest, { params }: Ctx) {
-  return handleWrite(req, async () => removeLink((await params).linkId));
+  return handleWrite(req, async (me) => {
+    const { id, linkId } = await params;
+    // The ticket it was removed from gets the history entry.
+    return removeLink(linkId, { actorId: me?.id ?? null, viewerId: getTask(id, true).id });
+  });
 }

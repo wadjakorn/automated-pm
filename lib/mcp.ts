@@ -9,10 +9,13 @@ import { z } from "zod";
 import { ApiError, unauthorized } from "./api-errors";
 import { authMode } from "./actor";
 import {
+  addComment,
   createTask,
   getProject,
   getStateMachine,
   getTask,
+  listActivity,
+  listInbox,
   listLinksFor,
   listProjects,
   listReadyTickets,
@@ -76,6 +79,7 @@ export function buildMcpServer(actor: User | null): McpServer {
       instructions:
         "Kanban board for projects and tickets. Ticket ids accept the storage id or the human key (e.g. PM-0002). " +
         "Statuses move one legal edge at a time (see next_statuses). Claim work with pm_move_task(from='todo'). " +
+        "Report progress and ask questions with pm_comment rather than editing the description. " +
         "Always set an assignee and a priority on tickets you create. " +
         UNTRUSTED,
     }
@@ -185,14 +189,17 @@ export function buildMcpServer(actor: User | null): McpServer {
     {
       title: "Get ticket",
       description:
-        "One ticket in full: fields, version, next_statuses (legal moves) and linked tickets. " + UNTRUSTED,
+        "One ticket in full: fields, version, next_statuses (legal moves), linked tickets and its " +
+        "history (comments + changes, oldest first; last 50). Read open questions and answers here. " +
+        UNTRUSTED,
       inputSchema: { id: z.string().describe("Ticket id or key, e.g. PM-0002") },
       annotations: { readOnlyHint: true },
     },
     async ({ id }) =>
       run(() => {
         const task = getTask(id);
-        return { ...withNext(task), links: listLinksFor(task.id) };
+        const history = listActivity(task.id, { limit: 1000 });
+        return { ...withNext(task), links: listLinksFor(task.id), activity: history.slice(-50) };
       })
   );
 
@@ -260,6 +267,38 @@ export function buildMcpServer(actor: User | null): McpServer {
     },
     async ({ id, status, from, version }) =>
       write(() => withNext(moveTask(id, status, { expectFrom: from, version })))
+  );
+
+  server.registerTool(
+    "pm_comment",
+    {
+      title: "Comment on ticket",
+      description:
+        "Add a comment instead of rewriting the description. kind: note (progress, default) | " +
+        "question (blocks on a human; shows in their inbox) | answer (reply_to = the question id; resolves it) | " +
+        "handoff (summary for whoever picks the ticket up next).",
+      inputSchema: {
+        id: z.string().describe("Ticket id or key"),
+        body: z.string().min(1).describe("Markdown"),
+        kind: z.enum(["note", "question", "answer", "handoff"]).optional(),
+        reply_to: z.string().optional().describe("Comment id this answers"),
+      },
+    },
+    async ({ id, ...data }) => write(() => addComment(id, data, { actorId: actor?.id ?? null }))
+  );
+
+  server.registerTool(
+    "pm_list_inbox",
+    {
+      title: "Open questions",
+      description: "Questions on live tickets still waiting for an answer, oldest first. " + UNTRUSTED,
+      inputSchema: {
+        project: z.string().optional().describe("Project id or name"),
+        assignee: z.string().optional().describe("Only tickets assigned to this user"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ project, assignee }) => run(() => listInbox({ project, assignee }))
   );
 
   return server;

@@ -20,20 +20,23 @@ export function GET(req: NextRequest, { params }: Ctx) {
 // `expect_from` makes the move conditional on the current status (claim).
 // `assignee`: omit = unchanged, null/"" = unassign, id|username = assign.
 export function PATCH(req: NextRequest, { params }: Ctx) {
-  return handleWrite(req, async () => {
+  return handleWrite(req, async (me) => {
     const { id } = await params;
     const body = await req.json();
     if (body.status !== undefined) {
       return moveTask(id, body.status, {
+        actorId: me?.id ?? null,
         version: body.version,
         rank: body.rank,
         expectFrom: typeof body.expect_from === "string" ? body.expect_from : undefined,
       });
     }
-    return updateTask(id, body);
+    return updateTask(id, body, { actorId: me?.id ?? null });
   });
 }
 
 export function DELETE(req: NextRequest, { params }: Ctx) {
-  return handleWrite(req, async () => softDeleteTask((await params).id));
+  return handleWrite(req, async (me) =>
+    softDeleteTask((await params).id, { actorId: me?.id ?? null })
+  );
 }
