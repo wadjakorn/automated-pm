@@ -7,6 +7,7 @@ import { api, ApiClientError } from "@/lib/client";
 import { allowedTargets } from "@/lib/statemachine";
 import { shareLink, LINK_OPTIONS, type LinkOption } from "@/lib/ticket-link";
 import { copyText } from "@/lib/clipboard";
+import { canUndoMove } from "./board-logic";
 import { compressImage, exceedsHardMax } from "@/lib/image-compress";
 import { PriorityIcon } from "./PriorityIcon";
 import { Markdown } from "./Markdown";
@@ -14,13 +15,16 @@ import { Spinner } from "./ui";
 import { toast } from "./Toast";
 
 // Slide-over drawer to edit a task: title, description, assignee, status move,
-// delete.
+// delete. The top bar (outside the scroll area) carries the ticket key, status
+// badge, legal moves, assignee and priority so they're reachable without
+// scrolling past a long description. Moving keeps the drawer open.
 export function EditDrawer({
   task,
   sm,
   users,
   onClose,
   onChanged,
+  onTaskUpdated,
   onOpenTask,
 }: {
   task: Task;
@@ -28,6 +32,10 @@ export function EditDrawer({
   users: PublicUser[];
   onClose: () => void;
   onChanged: () => void;
+  // Hand the server's fresh copy of the ticket back to the owner (new status
+  // and version after a move), so the drawer re-renders it without a 409 on
+  // the next move/save.
+  onTaskUpdated?: (t: Task) => void;
   // Navigate to another ticket (used by linked-ticket rows). Falls back to a
   // no-op so the drawer still works if a caller doesn't wire it.
   onOpenTask?: (id: string) => void;
@@ -50,11 +58,24 @@ export function EditDrawer({
   // screen-reader-friendly and themed.
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
+  // A different ticket resets every field. The same ticket at a new version
+  // (e.g. after a status move) only adopts the fresh saved value for fields
+  // the user hasn't touched, so unsaved edits survive a move.
+  const savedRef = useRef(task);
   useEffect(() => {
-    setTitle(task.title);
-    setDescription(task.description ?? "");
-    setAssignee(task.assignee_id ?? "");
-    setPriority(task.priority);
+    const prev = savedRef.current;
+    savedRef.current = task;
+    if (prev.id !== task.id) {
+      setTitle(task.title);
+      setDescription(task.description ?? "");
+      setAssignee(task.assignee_id ?? "");
+      setPriority(task.priority);
+      return;
+    }
+    setTitle((v) => (v === prev.title ? task.title : v));
+    setDescription((v) => (v === (prev.description ?? "") ? (task.description ?? "") : v));
+    setAssignee((v) => (v === (prev.assignee_id ?? "") ? (task.assignee_id ?? "") : v));
+    setPriority((v) => (v === prev.priority ? task.priority : v));
   }, [task]);
 
   // Unsaved edits: any editable field differs from the task's saved value.
@@ -204,13 +225,42 @@ export function EditDrawer({
       onClose();
     });
 
+  // Move without closing: the returned ticket (new status + version) replaces
+  // the drawer's copy, so the badge and move buttons update in place. Offers
+  // Undo when the state machine allows the reverse edge.
   const move = (to: string) =>
     withBusy(async () => {
-      await api.moveTask(task.id, to, task.version);
-      toast(`Moved to ${statusLabel(to)}`, "success");
+      const from = task.status_key;
+      const moved = await api.moveTask(task.id, to, task.version);
+      onTaskUpdated?.(moved);
       onChanged();
-      onClose();
+      toast(
+        `Moved to ${statusLabel(to)}`,
+        "success",
+        canUndoMove(sm, from, to)
+          ? { label: "Undo", onClick: () => void undoMove(moved.id, from, to) }
+          : undefined
+      );
     });
+
+  // Undo may fire after the drawer closed or another edit landed, so re-read
+  // the ticket for its current version and only move back if it's still where
+  // we put it.
+  async function undoMove(id: string, from: string, to: string) {
+    try {
+      const cur = await api.getTask(id);
+      if (cur.status_key !== to) {
+        toast("Ticket has moved since; nothing undone", "error");
+        return;
+      }
+      const back = await api.moveTask(id, from, cur.version);
+      onTaskUpdated?.(back);
+      onChanged();
+      toast(`Moved back to ${statusLabel(from)}`, "success");
+    } catch (e) {
+      toast((e as ApiClientError).message ?? "Undo failed", "error");
+    }
+  }
 
   const del = () =>
     withBusy(async () => {
@@ -234,11 +284,13 @@ export function EditDrawer({
         className="relative flex h-full w-full max-w-full animate-drawer-in flex-col border-l border-border bg-bg-soft outline-none sm:w-[60%] sm:min-w-[560px]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between px-5 pt-5 pb-4">
-          <h2 id="drawer-title" className="font-semibold text-fg">
-            Edit task
-          </h2>
-          <div className="flex items-center gap-3">
+        {/* Top bar: everything needed to triage the ticket, pinned above the
+            scrolling body so a long description never pushes it out of reach. */}
+        <div className="shrink-0 space-y-3 border-b border-border px-5 pt-4 pb-4">
+          <div className="flex items-center gap-2">
+            <h2 id="drawer-title" className="sr-only">
+              Edit task {task.ticket_key ?? task.id}
+            </h2>
             <button
               onClick={async () => {
                 const link = shareLink(window.location.origin, task);
@@ -248,32 +300,111 @@ export function EditDrawer({
                   toast(link, "success"); // last resort: surface the link to copy manually
                 }
               }}
-              className="font-mono text-xs text-fg-muted hover:text-fg"
+              className="shrink-0 font-mono text-xs text-fg-muted hover:text-fg"
               title="Copy link to this ticket"
             >
               🔗 {task.ticket_key ?? task.id}
             </button>
+            <span
+              className="min-w-0 truncate rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent ring-1 ring-accent-border"
+              title="Current status"
+            >
+              {statusLabel(task.status_key)}
+            </span>
+            {targets.length === 0 && (
+              <span className="shrink-0 rounded bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning">
+                final
+              </span>
+            )}
             <button
               onClick={requestClose}
               aria-label="Close"
-              className="rounded px-1 text-fg-muted hover:text-fg"
+              className="ml-auto shrink-0 rounded px-1 text-fg-muted hover:text-fg"
             >
               ✕
             </button>
           </div>
+
+          <div>
+            <label htmlFor="task-title" className="sr-only">
+              Title
+            </label>
+            <input
+              id="task-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Title"
+              className="w-full rounded border border-border bg-bg-card px-3 py-2 text-sm font-medium text-fg outline-none focus:border-accent"
+            />
+          </div>
+
+          <div
+            role="group"
+            aria-label="Move to status"
+            className="flex flex-wrap items-center gap-2"
+          >
+            <span className="text-xs text-fg-muted">Move</span>
+            {targets.length === 0 ? (
+              <span className="text-xs text-fg-subtle">
+                No moves available (final state).
+              </span>
+            ) : (
+              targets.map((to) => (
+                <button
+                  key={to}
+                  disabled={busy}
+                  onClick={() => move(to)}
+                  className="rounded border border-border px-2.5 py-1 text-xs text-fg hover:bg-bg-card disabled:opacity-50"
+                >
+                  → {statusLabel(to)}
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="task-assignee" className="text-xs text-fg-muted">
+                Assignee
+              </label>
+              <select
+                id="task-assignee"
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value)}
+                className="min-w-0 rounded border border-border bg-bg-card px-2 py-1.5 text-sm text-fg outline-none focus:border-accent"
+              >
+                <option value="">Unassigned</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="task-priority" className="text-xs text-fg-muted">
+                Priority
+              </label>
+              <div className="flex min-w-0 items-center gap-2">
+                <PriorityIcon priority={priority} className="h-4 w-4 shrink-0" />
+                <select
+                  id="task-priority"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value as typeof priority)}
+                  className="min-w-0 flex-1 rounded border border-border bg-bg-card px-2 py-1.5 text-sm text-fg outline-none focus:border-accent"
+                >
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
-        <label htmlFor="task-title" className="text-xs text-fg-muted">
-          Title
-        </label>
-        <input
-          id="task-title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="rounded border border-border bg-bg-card px-3 py-2 text-sm outline-none focus:border-accent"
-        />
-
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <label htmlFor="task-desc" className="text-xs text-fg-muted">
@@ -335,66 +466,6 @@ export function EditDrawer({
               ) : (
                 <span className="text-sm text-fg-subtle">No description.</span>
               )}
-            </div>
-          )}
-        </div>
-
-        <label htmlFor="task-assignee" className="text-xs text-fg-muted">
-          Assignee
-        </label>
-        <select
-          id="task-assignee"
-          value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
-          className="rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-        >
-          <option value="">Unassigned</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.username}
-            </option>
-          ))}
-        </select>
-
-        <label htmlFor="task-priority" className="text-xs text-fg-muted">
-          Priority
-        </label>
-        <div className="flex items-center gap-2">
-          <PriorityIcon priority={priority} className="h-4 w-4 shrink-0" />
-          <select
-            id="task-priority"
-            value={priority}
-            onChange={(e) => setPriority(e.target.value as typeof priority)}
-            className="flex-1 rounded border border-border bg-bg-card px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-          >
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <div className="mb-1 text-xs text-fg-muted">
-            Status: <span className="text-fg">{statusLabel(task.status_key)}</span>
-          </div>
-          {targets.length === 0 ? (
-            <div className="text-xs text-fg-subtle">
-              No moves available (final state).
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {targets.map((to) => (
-                <button
-                  key={to}
-                  disabled={busy}
-                  onClick={() => move(to)}
-                  className="rounded border border-border px-2.5 py-1 text-xs text-fg hover:bg-bg-card"
-                >
-                  → {statusLabel(to)}
-                </button>
-              ))}
             </div>
           )}
         </div>

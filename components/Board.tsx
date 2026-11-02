@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
+  KeyboardCode,
+  KeyboardSensor,
   MouseSensor,
   TouchSensor,
   useSensor,
@@ -11,11 +13,13 @@ import {
   useDroppable,
   type DragStartEvent,
   type DragEndEvent,
+  type KeyboardCoordinateGetter,
 } from "@dnd-kit/core";
 import type { Task, StateMachine } from "@/lib/types";
 import { priorityOrder } from "@/lib/priority";
 import { api, ApiClientError } from "@/lib/client";
-import { useProjects, usePoll, useUsers, useTaskRoute } from "./useApp";
+import { useAuth, useProjects, usePoll, useUsers, useTaskRoute } from "./useApp";
+import { dropHint, neighbourColumnX, type DropHint } from "./board-logic";
 import { resolveTicketAction, ticketRef } from "@/lib/ticket-link";
 import { AppShell } from "./AppShell";
 import { TaskCard } from "./TaskCard";
@@ -25,6 +29,12 @@ import { toast } from "./Toast";
 
 // Screen-reader narration for drag-and-drop. @dnd-kit announces these via a
 // visually-hidden live region so non-visual users can follow card moves.
+// Read out when a card gets focus; matches the KeyboardSensor bindings below.
+const dndInstructions = {
+  draggable:
+    "Press Enter to open the task. Press Space to pick it up, Left and Right arrows to move between columns, Space to drop, or Escape to cancel.",
+};
+
 const dndAnnouncements = {
   onDragStart({ active }: { active: { data: { current?: any } } }) {
     return `Picked up task ${active.data.current?.task?.title ?? ""}.`;
@@ -40,6 +50,27 @@ const dndAnnouncements = {
   },
 };
 
+// Keyboard drag: Left/Right jump the picked-up card one whole column instead
+// of dnd-kit's default 25px nudge (columns are ~288px wide). Up/Down are inert
+// — order within a column is by priority/rank, not position.
+const columnKeyboardCoordinates: KeyboardCoordinateGetter = (
+  event,
+  { context, currentCoordinates }
+) => {
+  const dir =
+    event.code === KeyboardCode.Right ? 1 : event.code === KeyboardCode.Left ? -1 : 0;
+  const rect = context.collisionRect;
+  if (!dir || !rect) return undefined;
+  event.preventDefault();
+  const x = neighbourColumnX(
+    Array.from(context.droppableRects.values()),
+    rect.left + rect.width / 2,
+    rect.width,
+    dir
+  );
+  return x === null ? undefined : { ...currentCoordinates, x };
+};
+
 function Column({
   statusKey,
   label,
@@ -48,6 +79,7 @@ function Column({
   onOpen,
   onAdd,
   onArchiveAll,
+  hint,
 }: {
   statusKey: string;
   label: string;
@@ -56,22 +88,30 @@ function Column({
   onOpen: (t: Task) => void;
   onAdd: (statusKey: string, title: string) => void;
   onArchiveAll: (statusKey: string) => void;
+  // Drag-in-progress hint for this column; null when nothing is being dragged.
+  hint: DropHint | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: statusKey });
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
 
+  // Quick add: Enter files the task and keeps the composer open, cleared and
+  // focused, for rapid entry. Esc, or blurring an empty composer, closes it;
+  // blurring with text still files that last task.
   const submit = () => {
     if (title.trim()) onAdd(statusKey, title.trim());
     setTitle("");
-    setAdding(false);
   };
+
+  const illegal = hint === "illegal";
 
   return (
     <section
       role="region"
       aria-label={`${label} column, ${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
-      className="flex h-full max-h-full w-72 max-w-[85vw] shrink-0 flex-col rounded-lg bg-bg-soft"
+      className={`flex h-full max-h-full w-72 max-w-[85vw] shrink-0 flex-col rounded-lg bg-bg-soft transition-opacity ${
+        illegal ? "opacity-40" : ""
+      }`}
     >
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-medium text-fg">
@@ -107,7 +147,7 @@ function Column({
         ref={setNodeRef}
         role="list"
         className={`flex min-h-[60px] flex-1 flex-col gap-2 overflow-y-auto p-2 transition-colors ${
-          isOver ? "rounded-lg bg-bg-card/60 ring-1 ring-accent" : ""
+          isOver && !illegal ? "rounded-lg bg-bg-card/60 ring-1 ring-accent" : ""
         }`}
       >
         {adding && (
@@ -115,13 +155,19 @@ function Column({
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            onBlur={submit}
+            onBlur={() => {
+              submit();
+              setAdding(false);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 submit();
               }
-              if (e.key === "Escape") setAdding(false);
+              if (e.key === "Escape") {
+                setTitle("");
+                setAdding(false);
+              }
             }}
             placeholder="Task title…"
             rows={2}
@@ -146,6 +192,7 @@ export function Board() {
   const replaceTaskRef = useRef(replaceTask);
   replaceTaskRef.current = replaceTask;
   const { users } = useUsers();
+  const { user } = useAuth();
   const [sm, setSm] = useState<StateMachine | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [active, setActive] = useState<Task | null>(null);
@@ -156,10 +203,20 @@ export function Board() {
   // Touch: require a deliberate long-press before a drag begins, so ordinary
   // vertical scrolling on mobile never gets hijacked into a card move. The
   // `tolerance` lets a finger drift slightly during the press without cancelling.
+  // Keyboard: Space picks up / drops, arrows move between columns, Esc cancels.
+  // Enter is deliberately NOT a drag key — TaskCard keeps Enter for "open".
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, {
       activationConstraint: { delay: 200, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      keyboardCodes: {
+        start: [KeyboardCode.Space],
+        cancel: [KeyboardCode.Esc],
+        end: [KeyboardCode.Space],
+      },
+      coordinateGetter: columnKeyboardCoordinates,
     })
   );
 
@@ -267,7 +324,8 @@ export function Board() {
   async function addTask(statusKey: string, title: string) {
     if (!selectedId) return;
     try {
-      await api.createTask(selectedId, title, undefined, statusKey);
+      // Quick-adds default to the logged-in user (anonymous → server default).
+      await api.createTask(selectedId, title, undefined, statusKey, user?.id);
       loadTasks(selectedId);
     } catch (e: any) {
       toast(e.message ?? "Failed to add task", "error");
@@ -324,7 +382,10 @@ export function Board() {
         ) : (
           <DndContext
             sensors={sensors}
-            accessibility={{ announcements: dndAnnouncements }}
+            accessibility={{
+              announcements: dndAnnouncements,
+              screenReaderInstructions: dndInstructions,
+            }}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onDragCancel={() => {
@@ -343,6 +404,7 @@ export function Board() {
                   onOpen={(t) => openTask(ticketRef(t))}
                   onAdd={addTask}
                   onArchiveAll={archiveAll}
+                  hint={active ? dropHint(sm, active.status_key, s.key) : null}
                 />
               ))}
             </div>
@@ -360,6 +422,9 @@ export function Board() {
           users={users}
           onClose={closeTask}
           onChanged={() => selectedId && loadTasks(selectedId)}
+          // Only refresh the drawer if it still shows this ticket (an Undo can
+          // land after it closed or switched — don't reopen/clobber it).
+          onTaskUpdated={(t) => setEditing((cur) => (cur && cur.id === t.id ? t : cur))}
           onOpenTask={openTask}
         />
       )}

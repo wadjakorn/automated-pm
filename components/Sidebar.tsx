@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { toast } from "./Toast";
@@ -15,6 +15,13 @@ import { toast } from "./Toast";
 // delete actions. Hidden projects drop out of the list behind a "Show hidden"
 // toggle; archived and deleted projects leave the list entirely (see the
 // Archive and Trash views).
+//
+// Below the `md` breakpoint the in-flow sidebar (rail or expanded) is not
+// rendered at all — it would eat most of a phone's width. Instead the same
+// contents open as an overlay drawer, driven by `mobileOpen` from the header's
+// hamburger (see AppShell/Nav). It starts closed, isn't persisted, and closes
+// on project select, backdrop tap or Esc. The desktop open/closed preference
+// (SIDEBAR_KEY) is untouched by it.
 const SIDEBAR_KEY = "sidebar:open";
 
 export function Sidebar({
@@ -22,12 +29,17 @@ export function Sidebar({
   selectedId,
   onSelect,
   onProjectsChanged,
+  mobileOpen = false,
+  onMobileClose,
 }: {
   projects: Project[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onProjectsChanged: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }) {
+  const drawerRef = useRef<HTMLElement>(null);
   // Default open; the stored preference is restored on mount (below) so the
   // server render and first client render agree (no hydration mismatch).
   const [open, setOpen] = useState(true);
@@ -43,6 +55,44 @@ export function Sidebar({
       typeof localStorage !== "undefined" ? localStorage.getItem(SIDEBAR_KEY) : null;
     if (stored === "0") setOpen(false);
   }, []);
+
+  // Mobile drawer: focus it on open, Esc closes, Tab stays inside (same trap
+  // pattern as the task EditDrawer).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    drawerRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (e.defaultPrevented) return; // an inner control already handled it
+        e.preventDefault();
+        onMobileClose?.();
+        return;
+      }
+      if (e.key !== "Tab" || !drawerRef.current) return;
+      const focusable = drawerRef.current.querySelectorAll<HTMLElement>(
+        'a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (activeEl === first || activeEl === drawerRef.current)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && activeEl === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen, onMobileClose]);
+
+  // Picking a project from the list also dismisses the mobile drawer.
+  const pick = (id: string) => {
+    onSelect(id);
+    onMobileClose?.();
+  };
 
   const toggle = () =>
     setOpen((v) => {
@@ -137,40 +187,21 @@ export function Sidebar({
     }
   }
 
-  // Collapsed: a narrow rail with just the expand toggle.
-  if (!open) {
-    return (
-      <aside className="theme-nav flex h-full w-11 shrink-0 flex-col items-center border-r border-border py-3">
-        <button
-          onClick={toggle}
-          title="Show projects"
-          aria-label="Show sidebar"
-          aria-expanded={false}
-          className="rounded px-2 py-1.5 text-fg-muted hover:text-fg"
-        >
-          »
-        </button>
-      </aside>
-    );
-  }
+  // Sidebar title row with a close control (« collapse on desktop, ✕ in the
+  // mobile drawer).
+  const header = (control: React.ReactNode) => (
+    <div className="flex items-center justify-between px-3 py-3">
+      <span className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+        Projects
+      </span>
+      {control}
+    </div>
+  );
 
-  return (
-    <aside className="theme-nav flex h-full w-56 shrink-0 flex-col border-r border-border">
-      <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
-          Projects
-        </span>
-        <button
-          onClick={toggle}
-          title="Hide projects"
-          aria-label="Hide sidebar"
-          aria-expanded={true}
-          className="rounded px-2 py-0.5 text-fg-muted hover:text-fg"
-        >
-          «
-        </button>
-      </div>
-
+  // Project list + hidden toggle + create flow. Shared by the desktop sidebar
+  // and the mobile drawer; CSS guarantees only one is ever displayed.
+  const body = (
+    <>
       <nav aria-label="Projects" className="flex-1 space-y-0.5 overflow-y-auto px-2">
         {visible.length === 0 && (
           <p className="px-2 py-1 text-sm text-fg-subtle">
@@ -185,7 +216,7 @@ export function Sidebar({
             <div key={p.id}>
               <div className="flex items-center gap-0.5">
                 <button
-                  onClick={() => onSelect(p.id)}
+                  onClick={() => pick(p.id)}
                   aria-current={active ? "true" : undefined}
                   title={p.name}
                   className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${
@@ -269,7 +300,10 @@ export function Sidebar({
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") create();
-                if (e.key === "Escape") setCreating(false);
+                if (e.key === "Escape") {
+                  e.preventDefault(); // cancel the create only, not the mobile drawer
+                  setCreating(false);
+                }
               }}
               placeholder="Project name"
               className="w-full rounded border border-border bg-bg-card px-2 py-1.5 text-sm outline-none focus:border-accent"
@@ -298,7 +332,74 @@ export function Sidebar({
           </button>
         )}
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {open ? (
+        <aside className="theme-nav hidden h-full w-56 shrink-0 flex-col border-r border-border md:flex">
+          {header(
+            <button
+              onClick={toggle}
+              title="Hide projects"
+              aria-label="Hide sidebar"
+              aria-expanded={true}
+              className="rounded px-2 py-0.5 text-fg-muted hover:text-fg"
+            >
+              «
+            </button>
+          )}
+          {body}
+        </aside>
+      ) : (
+        // Collapsed: a narrow rail with just the expand toggle.
+        <aside className="theme-nav hidden h-full w-11 shrink-0 flex-col items-center border-r border-border py-3 md:flex">
+          <button
+            onClick={toggle}
+            title="Show projects"
+            aria-label="Show sidebar"
+            aria-expanded={false}
+            className="rounded px-2 py-1.5 text-fg-muted hover:text-fg"
+          >
+            »
+          </button>
+        </aside>
+      )}
+
+      {mobileOpen && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <div
+            aria-hidden="true"
+            onClick={onMobileClose}
+            className="absolute inset-0 animate-fade-in bg-black/50"
+          />
+          {/* Opaque bg-bg under theme-nav: some packs use a translucent nav
+              background, which would let the board show through the drawer. */}
+          <aside
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Projects"
+            tabIndex={-1}
+            className="absolute inset-y-0 left-0 w-64 max-w-[85vw] animate-drawer-in-left border-r border-border bg-bg shadow-xl outline-none"
+          >
+            <div className="theme-nav flex h-full flex-col">
+              {header(
+                <button
+                  onClick={onMobileClose}
+                  aria-label="Close projects"
+                  className="rounded px-2 py-0.5 text-fg-muted hover:text-fg"
+                >
+                  ✕
+                </button>
+              )}
+              {body}
+            </div>
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
 

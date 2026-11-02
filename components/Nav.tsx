@@ -13,12 +13,21 @@ import { isAccentChoice, isThemePack, nextChoice } from "./theme";
 // Top bar: page nav links + theme toggle + auth. The project switcher and
 // "+ New project" live in the left <Sidebar> now. The selected project is
 // carried in the ?project= query string so it survives navigation across pages.
+//
+// On phones (< md) a leading hamburger opens the project drawer, and the row
+// never wraps: link padding tightens and the brand/username text drops away.
 export function Nav({
   projects,
   selectedId,
+  onMenu,
+  menuOpen = false,
+  menuRef,
 }: {
   projects: Project[];
   selectedId: string | null;
+  onMenu?: () => void;
+  menuOpen?: boolean;
+  menuRef?: React.Ref<HTMLButtonElement>;
 }) {
   const pathname = usePathname();
   const { user, refresh } = useAuth();
@@ -54,7 +63,7 @@ export function Nav({
     return (
       <Link
         href={href + q}
-        className={`px-3 py-1.5 text-sm ${
+        className={`px-2 py-1.5 text-sm sm:px-3 ${
           active
             ? "bg-accent-soft text-accent ring-1 ring-accent-border"
             : "text-fg-muted hover:text-fg"
@@ -89,14 +98,38 @@ export function Nav({
   };
 
   return (
-    <header className="theme-nav flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:gap-4 sm:px-5 sm:py-3">
-      <span className="font-semibold text-fg">📋 PM</span>
+    <header className="theme-nav flex items-center gap-2 whitespace-nowrap border-b border-border px-2 py-2 sm:gap-4 sm:px-5 sm:py-3">
+      {onMenu && (
+        <button
+          ref={menuRef}
+          onClick={onMenu}
+          aria-label="Open projects"
+          aria-expanded={menuOpen}
+          title="Projects"
+          className="rounded px-2 py-1.5 text-fg-muted hover:text-fg md:hidden"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+          >
+            <path d="M3 5h14M3 10h14M3 15h14" />
+          </svg>
+        </button>
+      )}
+      <span className="font-semibold text-fg">
+        📋<span className="hidden min-[400px]:inline"> PM</span>
+      </span>
 
-      <nav className="ml-auto flex flex-wrap items-center gap-1">
+      <nav className="ml-auto flex items-center gap-0.5 sm:gap-1">
         {link("/", "Board")}
         <details className="group relative">
           <summary
-            className={`list-none px-3 py-1.5 text-sm cursor-pointer ${
+            className={`list-none px-2 py-1.5 text-sm cursor-pointer sm:px-3 ${
               projectMenuActive
                 ? "bg-accent-soft text-accent ring-1 ring-accent-border"
                 : "text-fg-muted hover:text-fg"
@@ -119,7 +152,7 @@ export function Nav({
         >
           {themeIcon}
         </button>
-        <span className="mx-1 h-5 w-px bg-border" />
+        <span className="mx-0.5 h-5 w-px bg-border sm:mx-1" />
         {user ? (
           <div className="flex items-center gap-2">
             <span className="hidden text-sm text-fg-muted sm:inline">
@@ -136,13 +169,13 @@ export function Nav({
           <>
             <Link
               href="/login"
-              className="rounded px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
+              className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg sm:px-3"
             >
               Login
             </Link>
             <Link
               href="/register"
-              className="rounded border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-card"
+              className="rounded border border-border px-2 py-1.5 text-sm text-fg-muted hover:bg-bg-card sm:px-3"
             >
               Register
             </Link>
