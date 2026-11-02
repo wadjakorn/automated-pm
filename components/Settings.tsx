@@ -284,6 +284,18 @@ function ProjectSection({
     }
   }
 
+  // Ready status: where a human puts a ticket to hand it to the agents (/ready
+  // and the agent create gate). Applied immediately, like the default status.
+  async function setReadyStatus(key: string) {
+    try {
+      await api.updateProject(project.id, { ready_status_key: key || null });
+      onSaved();
+      toast("Ready status updated", "success");
+    } catch (e) {
+      toast((e as ApiClientError).message ?? "Failed", "error");
+    }
+  }
+
   // Ticket prefix for human ids (PREFIX-NNNN). Applied on Save (free text, so
   // not on every keystroke). Not behind the name/URL confirm gate — changing
   // it only relabels display ids, it never renumbers existing tickets.
@@ -414,6 +426,28 @@ function ProjectSection({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <label htmlFor="ready-status" className="w-40 text-fg-subtle">
+              Ready status
+            </label>
+            <select
+              id="ready-status"
+              value={project.ready_status_key ?? ""}
+              onChange={(e) => setReadyStatus(e.target.value)}
+              aria-describedby="ready-status-hint"
+              className="rounded border border-border bg-bg-card px-2 py-1 text-sm outline-none"
+            >
+              <option value="">Default (todo)</option>
+              {statuses.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <span id="ready-status-hint" className="text-xs text-fg-subtle">
+              Agents pick up tickets a human moves here.
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="w-40 text-fg-subtle">Ticket prefix</span>

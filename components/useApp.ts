@@ -191,3 +191,38 @@ export function useTaskRoute() {
 
   return { taskParam, openTask, replaceTask, closeTask };
 }
+
+// Fired after this tab answers/resolves/asks a question so every inbox view
+// (the Nav badge, the Inbox page) refetches now instead of on its next tick.
+const INBOX_EVENT = "pm:inbox-changed";
+
+export function notifyInboxChanged() {
+  window.dispatchEvent(new Event(INBOX_EVENT));
+}
+
+// Re-run `fn` whenever notifyInboxChanged() fires in this tab.
+export function useInboxChanged(fn: () => void) {
+  useEffect(() => {
+    window.addEventListener(INBOX_EVENT, fn);
+    return () => window.removeEventListener(INBOX_EVENT, fn);
+  }, [fn]);
+}
+
+// Number of open questions across all projects, for the Nav's Inbox badge.
+// Polled every 15s while the tab is visible; null until the first answer.
+export function useInboxCount(ms = 15000) {
+  const [count, setCount] = useState<number | null>(null);
+  const load = useCallback(async () => {
+    try {
+      setCount((await api.listInbox()).length);
+    } catch {
+      // keep the last known count; the next tick retries
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  usePoll(load, [load], ms);
+  useInboxChanged(load);
+  return count;
+}

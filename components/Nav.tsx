@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
-import { useAuth } from "./useApp";
+import { useAuth, useInboxCount } from "./useApp";
 import { toast } from "./Toast";
 import { useTheme } from "./ThemeProvider";
 import { isAccentChoice, isThemePack, nextChoice } from "./theme";
@@ -31,6 +31,9 @@ export function Nav({
 }) {
   const pathname = usePathname();
   const { user, refresh } = useAuth();
+  // Open questions waiting on a human (agents asking). The badge is how the
+  // owner notices from any page that someone is blocked on them.
+  const inboxCount = useInboxCount();
   const { choice, setChoice, resolved, setPack, setAccent } = useTheme();
   const themeIcon = resolved === "dark" ? "🌙" : "☀️";
   const themeLabel = `Theme: ${choice}`;
@@ -127,6 +130,29 @@ export function Nav({
 
       <nav className="ml-auto flex items-center gap-0.5 sm:gap-1">
         {link("/", "Board")}
+        <Link
+          href={"/inbox" + (selectedId ? `?project=${selectedId}` : "")}
+          aria-label={
+            inboxCount
+              ? `Inbox, ${inboxCount} open question${inboxCount === 1 ? "" : "s"}`
+              : "Inbox"
+          }
+          className={`inline-flex items-center gap-1.5 px-2 py-1.5 text-sm sm:px-3 ${
+            pathname === "/inbox"
+              ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+              : "text-fg-muted hover:text-fg"
+          }`}
+        >
+          Inbox
+          {!!inboxCount && (
+            <span
+              aria-hidden="true"
+              className="min-w-[1.25rem] rounded-full bg-accent px-1.5 text-center text-[11px] font-semibold leading-5 text-white"
+            >
+              {inboxCount > 99 ? "99+" : inboxCount}
+            </span>
+          )}
+        </Link>
         <details className="group relative">
           <summary
             className={`list-none px-2 py-1.5 text-sm cursor-pointer sm:px-3 ${

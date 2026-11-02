@@ -1,6 +1,6 @@
 # แผนพัฒนา UX, CLI และ MCP สำหรับคนและ Agentic AI
 
-วันที่ 2026-11-01 · **v2 2026-11-02** · สถานะ: M1 เสร็จ (#38-#42), ถัดไป M2
+วันที่ 2026-11-01 · **v2 2026-11-02** · สถานะ: M1 เสร็จ (#38-#42), M2 เสร็จ (#44-#45, capz#158), ถัดไป M3
 
 ## v2: แผนที่ใช้ทำงานจริง
 
@@ -36,7 +36,7 @@
 
 ### M2-M4
 
-- **M2 ความจำของงาน:** `task_activity`, `pm comment`/`pm log`, timeline, Inbox, `ready_status_key`, `/ready` ตรวจว่าคนย้ายเข้าสถานะพร้อมทำ, ย้าย capz-loop จาก STATUS มาใช้ comment
+- **M2 ความจำของงาน (เสร็จ 2026-11-02):** `task_activity`, `pm comment`/`pm log`/`pm inbox`/`pm events`, timeline และช่องเขียน comment ใน drawer, หน้า `/inbox` พร้อมตัวเลขในเมนู, `ready_status_key`, `/ready` ตรวจว่าคนย้ายเข้าสถานะพร้อมทำ (#44, #45), capz-loop ใช้ comment แทน STATUS (capz#158)
 - **M3 หาและดู:** FTS5 search, command palette, filter, Home ข้ามโปรเจกต์, SSE ที่อ่านจากตาราง activity, ขยาย MCP ตามการใช้งานจริง
 - **M4 เมื่อจำเป็น:** lease/heartbeat, idempotency, labels, subtask, artifacts, agent runs, routing, webhook โดยเริ่มเมื่อมี poller ตั้งแต่สองตัวแย่งงานกัน หรือต้องกู้ตั๋วด้วยมือเกินสัปดาห์ละครั้ง
 

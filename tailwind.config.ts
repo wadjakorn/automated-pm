@@ -20,6 +20,10 @@ export default {
         accent: {
           DEFAULT: "var(--accent)",
           hover: "var(--accent-hover)",
+          // Defined per theme in globals.css; used for active nav items and
+          // soft badges (bg-accent-soft, ring-accent-border).
+          soft: "var(--accent-soft)",
+          border: "var(--accent-border)",
         },
         danger: {
           DEFAULT: "var(--danger)",
