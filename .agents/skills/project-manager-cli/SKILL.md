@@ -116,8 +116,8 @@ pm transition add    --project <id|name> --from <key> --to <key>
 pm transition remove --project <id|name> --from <key> --to <key>
 
 pm task create  --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
-pm task create  --project <id|name> --stdin              # one task per non-empty stdin line
-pm task list    --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>]
+pm task create  --project <id|name> --stdin              # one task per non-empty stdin line, all-or-nothing
+pm task list    --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>] [--view summary|full]
 # every --id below takes the nanoid OR the human ticket key (e.g. PM-0002),
 # the same string shown on the card and in a copied ticket link.
 pm task get     --id <id|key> [--include-deleted]        # fetch ONE task directly by id (no project needed)
@@ -139,8 +139,8 @@ pm task link add  --id <id|key> --to <url|id|key> --type <type>
 pm task link list --id <id|key>
 pm task link rm   --id <id|key> --link <linkId>
 
-pm board        --project <id|name>                      # columns view: tasks grouped by status
-pm ready        [--project <id|name>] [--assignee <id|username>]   # ready tickets (+repo, +desc) for the poll routine; needs PM_TOKEN
+pm board        --project <id|name> [--view summary]     # columns view: tasks grouped by status
+pm ready        [--project <id|name>] [--assignee <id|username>]   # ready, unblocked tickets (+repo, +desc, +ticket_key, +version); needs PM_TOKEN; unknown ref → not_found
 
 # changing --name or --remote-url is a GUARDED edit: it needs --confirm (else
 # bad_request). --description and --default-status are NOT guarded. --remote-url
@@ -291,6 +291,10 @@ the read-then-write for you.
   Until fixed, `npm run cli -- <args>` from the repo always works.
 - **Wrong port.** If the dev server picked another port (3001+), every command
   needs `PM_API=http://localhost:<port>`.
+- **Big descriptions.** Use `--view summary` on `task list`/`board` (200-char
+  excerpt + `has_more_description`), then `pm task get --id <key>` for the one
+  ticket you need. Values starting with `--` need the `=` form
+  (`--title=--draft--`).
 - **Pretty vs JSON.** If you script `pm` and parse stdout, you already get JSON
   (non-TTY). Only humans in a terminal see tables. Never parse pretty output —
   pass `--json` if unsure.

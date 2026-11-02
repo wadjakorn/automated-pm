@@ -23,11 +23,30 @@ const TOKEN = process.env.PM_TOKEN;
 
 type Flags = Record<string, string | boolean>;
 
-function parseFlags(argv: string[]): Flags {
+// Flags that are switches. Every other flag needs a value, and a bare one
+// (`pm task update --title`) is a usage error instead of a silent `true`.
+export const SWITCHES = new Set([
+  "stdin",
+  "final",
+  "include-deleted",
+  "include-archived",
+  "unassign",
+  "confirm",
+  "hidden",
+]);
+
+// `--key value` or `--key=value`. The `=` form is how to pass a value that
+// itself starts with `--` (e.g. --title=--draft--).
+export function parseFlags(argv: string[]): Flags {
   const flags: Flags = {};
   for (let i = 0; i < argv.length; i++) {
     const tok = argv[i];
     if (!tok.startsWith("--")) continue;
+    const eq = tok.indexOf("=");
+    if (eq > 2) {
+      flags[tok.slice(2, eq)] = tok.slice(eq + 1);
+      continue;
+    }
     const key = tok.slice(2);
     const next = argv[i + 1];
     if (next === undefined || next.startsWith("--")) flags[key] = true;
@@ -37,6 +56,47 @@ function parseFlags(argv: string[]): Flags {
     }
   }
   return flags;
+}
+
+// First flag that should carry a value but doesn't, if any.
+export function bareValueFlag(f: Flags): string | undefined {
+  return Object.keys(f).find((k) => f[k] === true && !SWITCHES.has(k));
+}
+
+// Every `pm <group> <action>` the CLI knows, for did-you-mean suggestions.
+export const COMMANDS = [
+  "user create", "user list", "login", "whoami", "token rotate",
+  "project create", "project list", "project update", "project delete",
+  "project restore", "project archive", "project unarchive", "project reorder",
+  "status list", "status add", "status set-final", "status update", "status remove",
+  "transition add", "transition remove",
+  "task create", "task list", "task get", "task move", "task update",
+  "task delete", "task restore", "task archive", "task unarchive", "task archive-final",
+  "task link add", "task link list", "task link rm",
+  "board", "ready", "help",
+];
+
+function editDistance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+  return d[a.length][b.length];
+}
+
+// Up to 3 known commands close to what was typed (same group first).
+export function suggest(typed: string): string[] {
+  const t = typed.trim();
+  return COMMANDS.map((c) => ({ c, d: editDistance(t, c) - (c.split(" ")[0] === t.split(" ")[0] ? 1 : 0) }))
+    .filter((x) => x.d <= Math.max(2, Math.floor(t.length / 3)))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 3)
+    .map((x) => x.c);
 }
 
 // Thrown by finish() to unwind out of main() once the final output is queued.
@@ -105,6 +165,22 @@ const need = (f: Flags, k: string): string => {
   return v as string;
 };
 
+// Optional integer flag (e.g. --version): a non-number is a usage error, not
+// a NaN that the server would read as a version mismatch.
+const int = (f: Flags, k: string): number | undefined => {
+  const v = f[k];
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || !/^\d+$/.test(v)) fail(`--${k} must be a whole number`);
+  return Number(v);
+};
+
+// --view summary|full for list/board (summary trims descriptions).
+const viewQs = (f: Flags, qs: URLSearchParams) => {
+  if (f.view === undefined) return;
+  if (f.view !== "summary" && f.view !== "full") fail("--view must be summary or full");
+  qs.set("view", f.view as string);
+};
+
 // --project accepts an id OR a project name; the server resolves either.
 // URL-encode it because a name may contain spaces/slashes when used in a path.
 const proj = (f: Flags): string => encodeURIComponent(need(f, "project"));
@@ -140,10 +216,11 @@ const HELP = `pm — Project Manager CLI
 
   # --assignee accepts a user id OR username; --priority is low|medium|high|now (default medium)
   pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <p>]
-  pm task create --project <id|name> --stdin   # one task per non-empty stdin line
+  pm task create --project <id|name> --stdin   # one task per non-empty stdin line, all-or-nothing
   # aliases: \`ls\`=list, \`mv\`=move, \`rm\`=delete (e.g. pm task ls --project demo)
   # task list auto-sorts each status by priority (now→high→medium→low), then rank
-  pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <p>]
+  # --view summary trims descriptions to a 200-char excerpt (much smaller output)
+  pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <p>] [--view summary|full]
   # every --id below accepts the nanoid OR the human ticket key (e.g. PM-0002)
   pm task get --id <id|key> [--include-deleted]   # fetch one task directly
   # --from <key>: move only if the ticket is still in <key> (claim); else 409 status_changed
@@ -164,7 +241,8 @@ const HELP = `pm — Project Manager CLI
   pm task link list --id <id|key>
   pm task link rm   --id <id|key> --link <linkId>
 
-  pm board --project <id|name>          # columns view: tasks grouped by status
+  pm board --project <id|name> [--view summary]   # columns view: tasks grouped by status
+  # values that start with -- use the = form: --title=--draft--
   pm ready [--project <id|name>] [--assignee <id|username>]   # ready tickets (repo + desc) for the poll routine
 `;
 
@@ -183,7 +261,9 @@ async function board(f: Flags): Promise<never> {
   const pid = encodeURIComponent(ref);
   const smR = await api("GET", `/api/projects/${pid}/statuses`);
   if (!(smR.status >= 200 && smR.status < 300)) return emit("board", smR); // renders error
-  const tR = await api("GET", `/api/tasks?project=${pid}`);
+  const qs = new URLSearchParams({ project: ref });
+  viewQs(f, qs);
+  const tR = await api("GET", `/api/tasks?${qs.toString()}`);
   if (!(tR.status >= 200 && tR.status < 300)) return emit("board", tR);
   const statuses = smR.json.statuses ?? [];
   const tasks = (tR.json ?? []) as any[];
@@ -209,6 +289,8 @@ async function main() {
   // Single-word commands: flags live in [rawAction, ...rest].
   if (group === "login" || group === "whoami" || group === "board" || group === "ready") {
     const sf = parseFlags([rawAction, ...rest].filter((x): x is string => !!x));
+    const bareS = bareValueFlag(sf);
+    if (bareS) fail(`--${bareS} needs a value (use --${bareS}=<value> if it starts with --)`);
     if (group === "whoami") return emit("raw", await api("GET", "/api/auth/me"));
     if (group === "login")
       return emit(
@@ -258,11 +340,16 @@ async function main() {
           )
         );
       default:
-        fail(`unknown command "task link ${rest[0] ?? ""}"`, { help: HELP });
+        fail(`unknown command "task link ${rest[0] ?? ""}"`, {
+          did_you_mean: suggest(`task link ${rest[0] ?? ""}`),
+          hint: "pm help",
+        });
     }
   }
 
   const f = parseFlags(rest);
+  const bare = bareValueFlag(f);
+  if (bare) fail(`--${bare} needs a value (use --${bare}=<value> if it starts with --)`);
 
   switch (`${group} ${action}`) {
     case "user create":
@@ -401,23 +488,24 @@ async function main() {
 
     case "task create": {
       if (f.stdin) {
+        // One task per line, created atomically: a bad line creates nothing,
+        // so a retry can't duplicate the lines that went through.
         const titles = readFileSync(0, "utf8")
           .split("\n")
           .map((s) => s.trim())
           .filter(Boolean);
-        const created: any[] = [];
-        for (const title of titles) {
-          const r = await api("POST", "/api/tasks", {
+        const common = {
+          status: typeof f.status === "string" ? f.status : undefined,
+          assignee: typeof f.assignee === "string" ? f.assignee : undefined,
+          priority: typeof f.priority === "string" ? f.priority : undefined,
+        };
+        return emit(
+          "tasks",
+          await api("POST", "/api/tasks/batch", {
             project: need(f, "project"),
-            title,
-            status: typeof f.status === "string" ? f.status : undefined,
-            assignee: typeof f.assignee === "string" ? f.assignee : undefined,
-            priority: typeof f.priority === "string" ? f.priority : undefined,
-          });
-          if (!(r.status >= 200 && r.status < 300)) return emit("task", r); // surface first error
-          created.push(r.json);
-        }
-        return emit("tasks", { status: 200, json: created });
+            tasks: titles.map((title) => ({ title, ...common })),
+          })
+        );
       }
       return emit(
         "task",
@@ -435,7 +523,7 @@ async function main() {
       const qs = new URLSearchParams();
       if (f["include-deleted"]) qs.set("includeDeleted", "true");
       const q = qs.toString() ? `?${qs.toString()}` : "";
-      return emit("task", await api("GET", `/api/tasks/${need(f, "id")}${q}`));
+      return emit("taskdetail", await api("GET", `/api/tasks/${need(f, "id")}${q}`));
     }
     case "task list": {
       const qs = new URLSearchParams({ project: need(f, "project") });
@@ -444,6 +532,7 @@ async function main() {
       if (f["include-archived"]) qs.set("includeArchived", "true");
       if (typeof f.assignee === "string") qs.set("assignee", f.assignee);
       if (typeof f.priority === "string") qs.set("priority", f.priority);
+      viewQs(f, qs);
       return emit("tasks", await api("GET", `/api/tasks?${qs.toString()}`));
     }
     case "task move":
@@ -452,7 +541,7 @@ async function main() {
         await api("PATCH", `/api/tasks/${need(f, "id")}`, {
           status: need(f, "status"),
           expect_from: typeof f.from === "string" ? f.from : undefined,
-          version: f.version !== undefined ? Number(f.version) : undefined,
+          version: int(f, "version"),
         })
       );
     case "task update": {
@@ -465,7 +554,7 @@ async function main() {
         await api("PATCH", `/api/tasks/${need(f, "id")}`, {
           title: f.title,
           description: f.description,
-          version: f.version !== undefined ? Number(f.version) : undefined,
+          version: int(f, "version"),
           assignee,
           priority: typeof f.priority === "string" ? f.priority : undefined,
         })
@@ -491,8 +580,10 @@ async function main() {
         }))
       );
 
-    default:
-      fail(`unknown command "${group} ${action}"`, { help: HELP });
+    default: {
+      const typed = [group, action].filter(Boolean).join(" ");
+      fail(`unknown command "${typed}"`, { did_you_mean: suggest(typed), hint: "pm help" });
+    }
   }
 }
 

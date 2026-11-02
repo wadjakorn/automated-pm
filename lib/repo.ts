@@ -637,34 +637,24 @@ export function listTasks(
 // that belongs to an opted-in project (one with a remote_repo_url), with that
 // URL joined so the poll routine knows which repo to work in. Cross-project by
 // default; `projectRef` (id or name) narrows to one project, `assignee` (id or
-// username) to one user — an unknown project OR assignee ref yields []. A fleet
-// of pollers pins distinct assignees to split work with no overlap.
+// username) to one user — an unknown project OR assignee ref is a 404 (a typo
+// must not read as "no work"). A fleet of pollers pins distinct assignees to
+// split work with no overlap. A ticket that is still blocked — an incoming
+// `blocks` link from a live ticket not yet in a final status — is not ready.
 // `status` defaults to "todo" (the route passes CC_BRIDGE_READY_STATUS).
 export function listReadyTickets(
   opts: { projectRef?: string; assignee?: string; status?: string } = {}
 ): ReadyTicket[] {
   const status = opts.status ?? READY_STATUS_KEY;
-  let pid: string | null = null;
-  if (opts.projectRef) {
-    try {
-      pid = getProject(opts.projectRef).id;
-    } catch {
-      return []; // unknown project → no ready work, not an error
-    }
-  }
-  let aid: string | null = null;
-  if (opts.assignee) {
-    try {
-      aid = resolveUserId(opts.assignee);
-    } catch {
-      return []; // unknown assignee → no ready work, not an error
-    }
-  }
-  return getDb()
+  const pid = opts.projectRef ? getProject(opts.projectRef).id : null;
+  const aid = opts.assignee ? resolveUserId(opts.assignee) : null;
+  const rows = getDb()
     .prepare(
       `SELECT t.id AS ticket, t.project_id AS project, p.name AS projectName,
               p.remote_repo_url AS repo, t.title AS title,
-              t.priority AS priority, t.description AS description
+              t.priority AS priority, t.description AS description,
+              t.version AS version, t.ticket_number AS ticket_number,
+              p.ticket_prefix AS ticket_prefix
          FROM tasks t
          JOIN projects p ON p.id = t.project_id
         WHERE p.deleted_at IS NULL
@@ -674,9 +664,22 @@ export function listReadyTickets(
           AND t.status_key = ?
           AND (? IS NULL OR p.id = ?)
           AND (? IS NULL OR t.assignee_id = ?)
+          AND NOT EXISTS (
+            SELECT 1 FROM task_links l
+              JOIN tasks b ON b.id = l.source_id
+              JOIN statuses bs ON bs.project_id = b.project_id AND bs.key = b.status_key
+             WHERE l.target_id = t.id AND l.type = 'blocks'
+               AND b.deleted_at IS NULL AND bs.is_final = 0)
         ORDER BY ${PRIORITY_ORDER_SQL}, t.rank`
     )
-    .all(status, pid, pid, aid, aid) as ReadyTicket[];
+    .all(status, pid, pid, aid, aid) as any[];
+  return rows.map(({ ticket_number, ticket_prefix, ...r }) => ({
+    ...r,
+    ticket_key:
+      ticket_prefix != null && ticket_number != null
+        ? formatTicketKey(ticket_prefix, ticket_number)
+        : null,
+  }));
 }
 
 // Shape of a human ticket key: an uppercase-letter-led prefix, then 4+ digits.
@@ -739,6 +742,10 @@ export function createTask(
 ): Task {
   const project = getProject(projectId);
   projectId = project.id;
+  assertOptionalString(data.title, "title");
+  assertOptionalString(data.description, "description");
+  assertOptionalString(data.status, "status");
+  assertOptionalString(data.priority, "priority");
   if (!data.title?.trim()) throw badRequest("title is required");
   const sm = getStateMachine(projectId);
   // Status resolution: explicit > project default (if it still names a live
@@ -795,6 +802,41 @@ export function createTask(
   return getTask(tid);
 }
 
+// Reject wrongly-typed JSON fields up front with a 400, instead of letting a
+// `.trim()` on a boolean surface as a 500 (e.g. `pm task update --title`).
+function assertOptionalString(v: unknown, field: string) {
+  if (v !== undefined && typeof v !== "string") throw badRequest(`${field} must be a string`);
+}
+function assertOptionalVersion(v: unknown) {
+  if (v !== undefined && v !== null && !Number.isInteger(v))
+    throw badRequest("version must be an integer");
+}
+
+// Create several tickets in one project atomically: all or none. Each item is
+// validated exactly like createTask (same ready gate for the actor).
+export function createTasks(
+  projectRef: string,
+  items: unknown,
+  actor: { creatorId: string | null; actorKind: UserKind | null }
+): Task[] {
+  if (!Array.isArray(items) || items.length === 0)
+    throw badRequest("tasks must be a non-empty array");
+  if (items.length > 200) throw badRequest("at most 200 tasks per batch");
+  const projectId = getProject(projectRef).id;
+  const run = getDb().transaction(() =>
+    items.map((item, i) => {
+      if (!item || typeof item !== "object") throw badRequest(`tasks[${i}] must be an object`);
+      try {
+        return createTask(projectId, { ...(item as any), ...actor });
+      } catch (e: any) {
+        if (e?.message) e.message = `tasks[${i}]: ${e.message}`;
+        throw e;
+      }
+    })
+  );
+  return run();
+}
+
 // Check optimistic version when caller supplied one.
 function assertVersion(task: Task, version?: number) {
   if (version !== undefined && version !== task.version) throw conflict(task);
@@ -815,6 +857,10 @@ export function updateTask(
   const t = getTask(taskId);
   taskId = t.id; // caller may have passed a ticket key
   assertVersion(t, patch.version);
+  assertOptionalString(patch.title, "title");
+  if (patch.description !== null) assertOptionalString(patch.description, "description");
+  assertOptionalString(patch.priority, "priority");
+  assertOptionalVersion(patch.version);
   const title = patch.title?.trim() ?? t.title;
   if (!title) throw badRequest("title cannot be empty");
   const description =
@@ -845,6 +891,8 @@ export function moveTask(
 ): Task {
   const t = getTask(taskId);
   taskId = t.id;
+  if (typeof toStatus !== "string") throw badRequest("status must be a string");
+  assertOptionalVersion(opts.version);
   if (opts.expectFrom !== undefined && t.status_key !== opts.expectFrom)
     throw statusChanged(opts.expectFrom, t);
   assertVersion(t, opts.version);

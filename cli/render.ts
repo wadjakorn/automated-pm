@@ -2,7 +2,7 @@ import type { Mode } from "./mode";
 
 export type Kind =
   | "projects" | "project" | "statemachine"
-  | "tasks" | "task" | "board" | "ready" | "ok" | "raw";
+  | "tasks" | "task" | "taskdetail" | "board" | "ready" | "ok" | "raw";
 
 export interface RenderOpts {
   mode: Mode;
@@ -57,18 +57,44 @@ function renderProject(p: any, o: RenderOpts): string {
   return `${paint("✓", ANSI.green, o.color)} project ${p.name} (${p.id})${repo}`;
 }
 
+// Human ticket key when the project has a prefix, else the storage id — the
+// same string the web card shows and every --id flag accepts.
+const ref = (t: any): string => t.ticket_key ?? t.id ?? t.ticket;
+
 function renderTasks(list: any[]): string {
   if (!list.length) return "(no tasks)";
   return table(
-    ["ID", "STATUS", "PRIO", "TITLE", "VER"],
-    list.map((t) => [t.id, t.status_key, t.priority ?? "", t.title, "v" + t.version])
+    ["KEY", "STATUS", "PRIO", "ASSIGNEE", "TITLE", "VER"],
+    list.map((t) => [
+      ref(t),
+      t.status_key,
+      t.priority ?? "",
+      t.assignee_username ?? "",
+      t.title,
+      "v" + t.version,
+    ])
   );
 }
 
 function renderTask(t: any, o: RenderOpts): string {
   const tick = paint("✓", ANSI.green, o.color);
   const st = paint(t.status_key, ANSI.cyan, o.color);
-  return `${tick} ${t.id} "${t.title}" → ${st} (v${t.version})`;
+  return `${tick} ${ref(t)} "${t.title}" → ${st} (v${t.version})`;
+}
+
+// `pm task get`: the whole ticket, readable in a terminal.
+function renderTaskDetail(t: any, o: RenderOpts): string {
+  const dim = (s: string) => paint(s, ANSI.dim, o.color);
+  const meta = [
+    `status   ${paint(t.status_key, ANSI.cyan, o.color)}${t.archived_at ? " (archived)" : ""}${t.deleted_at ? " (deleted)" : ""}`,
+    `priority ${t.priority ?? ""}`,
+    `assignee ${t.assignee_username ?? "—"}`,
+    `creator  ${t.creator_username ?? "—"}`,
+    `updated  ${String(t.updated_at ?? "").replace("T", " ").slice(0, 16)}  ${dim(`v${t.version} · ${t.id}`)}`,
+  ];
+  const head = paint(`${ref(t)}  ${t.title}`, ANSI.bold, o.color);
+  const body = t.description ? `\n\n${t.description}` : `\n\n${dim("(no description)")}`;
+  return `${head}\n${meta.join("\n")}${body}`;
 }
 
 function renderStateMachine(sm: any): string {
@@ -92,7 +118,7 @@ function renderReady(list: any[]): string {
   if (!list.length) return "(no ready tickets)";
   return table(
     ["TICKET", "PROJECT", "PRIO", "REPO", "TITLE"],
-    list.map((r) => [r.ticket, r.projectName ?? r.project, r.priority ?? "", r.repo ?? "", r.title ?? ""])
+    list.map((r) => [r.ticket_key ?? r.ticket, r.projectName ?? r.project, r.priority ?? "", r.repo ?? "", r.title ?? ""])
   );
 }
 
@@ -108,7 +134,12 @@ function renderBoard(b: any, o: RenderOpts): string {
         o.color
       );
       const items = col.tasks.length
-        ? col.tasks.map((t: any) => `  • ${t.title}  ${paint(t.id, ANSI.dim, o.color)}`).join("\n")
+        ? col.tasks
+            .map((t: any) => {
+              const who = t.assignee_username ? ` @${t.assignee_username}` : "";
+              return `  • ${t.title}  ${paint(ref(t) + who, ANSI.dim, o.color)}`;
+            })
+            .join("\n")
         : "  (empty)";
       return `${head}\n${items}`;
     })
@@ -123,6 +154,7 @@ export function render(kind: Kind, data: any, o: RenderOpts): string {
     case "statemachine": return renderStateMachine(data);
     case "tasks": return renderTasks(data);
     case "task": return renderTask(data, o);
+    case "taskdetail": return renderTaskDetail(data, o);
     case "board": return renderBoard(data, o);
     case "ready": return renderReady(data);
     case "ok": return `${paint("✓", ANSI.green, o.color)} done`;
@@ -134,6 +166,9 @@ function errorHint(code: string): string {
   switch (code) {
     case "illegal_transition": return "Run `pm status list --project <p>` to see allowed moves.";
     case "conflict": return "Row changed elsewhere; re-read and retry with the new version.";
+    case "status_changed": return "Someone else moved this ticket first; pick another one.";
+    case "forbidden": return "Agents can't do this; ask a human (e.g. create in backlog and let them move it).";
+    case "unauthorized": return "Check PM_TOKEN (`pm whoami`), or rotate it with `pm token rotate`.";
     case "not_found": return "Re-list to get a valid id.";
     case "cli_error": return "Is the server running? Start it with `npm run dev`.";
     default: return "";
