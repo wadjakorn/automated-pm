@@ -147,23 +147,23 @@ npm run db:restore -- --in ~/pm.tgz --yes # snapshots current DB + uploads first
 
 The default export is a single `.tgz` bundling `pm.db` + the `uploads/` image
 dir. SQLite's format is architecture-independent, so a backup taken on your
-laptop restores cleanly on the dietpi (ARM) server. `restore` accepts either a
+laptop restores cleanly on another machine, including ARM. `restore` accepts either a
 `.tgz` archive or a bare `.db` (detected by gzip magic bytes, so old `.db`
 backups still restore), validates the source is a real PM database, snapshots
 the current DB + uploads to `data/backups/pre-restore-*`, then replaces them and
 clears stale `-wal`/`-shm`. **Restart the server after a restore** so it reopens
 the new file. `data/` is gitignored — copy backups out (e.g. `scp`).
 
-### Localhost → dietpi home server
+### Moving the board to another machine
 
 ```bash
-# 1. on your laptop
+# 1. on the old machine
 npm run db:export -- --out ~/pm-export.tgz
-scp ~/pm-export.tgz dietpi@<host>:/path/to/project-manager/data/
+scp ~/pm-export.tgz <user>@<host>:/path/to/automated-pm/data/
 
-# 2. on the dietpi (clone the repo, npm install, then)
+# 2. on the new machine (clone the repo, npm install, then)
 npm run db:restore -- --in data/pm-export.tgz --yes
-npm run build && npm run start        # serves the board on the dietpi
+npm run build && npm run start        # serves the board on the new machine
 ```
 
 `PM_DB_PATH` overrides the DB location on either machine if you keep the file

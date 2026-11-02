@@ -1,7 +1,7 @@
 // Copy text to the clipboard, working in BOTH secure and insecure contexts.
 //
 // `navigator.clipboard` only exists in a secure context (HTTPS or localhost).
-// Over plain HTTP on a non-localhost host (e.g. http://dietpi:3000) it is
+// Over plain HTTP on a non-localhost host (e.g. http://pm-host:3000) it is
 // `undefined`, so we fall back to a hidden <textarea> + document.execCommand
 // ("copy"), which still works there. Returns true if any path succeeded.
 
