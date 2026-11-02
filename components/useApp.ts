@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Project, PublicUser } from "@/lib/types";
 import { api } from "@/lib/client";
+import { pickDefaultProject } from "./board-logic";
+
+// localStorage key remembering the last project the user had selected, so a
+// bare `/` reopens it instead of whichever project happens to sort first.
+const LAST_PROJECT_KEY = "project:last";
 
 // Current user (or null when anonymous). Auth is optional, so null is normal.
 export function useAuth() {
@@ -41,13 +46,23 @@ export function useUsers() {
 }
 
 // Loads projects and tracks the selected one via the ?project= query string,
-// falling back to the first project. Returns a setter that updates the URL.
+// falling back to the last-selected project (if still live and not hidden or
+// archived), else the first visible one. Returns a setter that updates the URL.
 export function useProjects() {
   const router = useRouter();
   const params = useSearchParams();
   const urlProject = params.get("project");
   const [projects, setProjects] = useState<Project[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Read after mount (not during render) so SSR and the first client render
+  // agree; projects are fetched client-side anyway, so nothing is lost.
+  const [lastId, setLastId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      setLastId(localStorage.getItem(LAST_PROJECT_KEY));
+    } catch {}
+  }, []);
 
   const reload = useCallback(async () => {
     const list = await api.listProjects();
@@ -63,7 +78,15 @@ export function useProjects() {
   const selectedId =
     urlProject && projects.some((p) => p.id === urlProject)
       ? urlProject
-      : (projects[0]?.id ?? null);
+      : pickDefaultProject(projects, lastId);
+
+  // Remember whatever ends up selected (explicit pick or default).
+  useEffect(() => {
+    if (!selectedId) return;
+    try {
+      localStorage.setItem(LAST_PROJECT_KEY, selectedId);
+    } catch {}
+  }, [selectedId]);
 
   const select = useCallback(
     (id: string) => {

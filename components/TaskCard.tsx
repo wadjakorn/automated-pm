@@ -47,11 +47,16 @@ export function TaskCard({
       tabIndex={overlay ? -1 : 0}
       aria-label={`Open task: ${task.title}`}
       onClick={() => onOpen?.(task)}
+      // Enter opens the card; everything else (Space = pick up, see Board's
+      // KeyboardSensor) goes to dnd-kit's listener, which this prop would
+      // otherwise shadow since it comes after the {...listeners} spread.
       onKeyDown={(e) => {
-        if (!overlay && (e.key === "Enter" || e.key === " ")) {
+        if (!overlay && !isDragging && e.key === "Enter") {
           e.preventDefault();
           onOpen?.(task);
+          return;
         }
+        listeners?.onKeyDown?.(e);
       }}
       className={`cursor-grab rounded-md border border-border bg-bg-card p-3 text-sm shadow-sm transition-colors active:cursor-grabbing ${
         isDragging && !overlay ? "opacity-30" : ""
