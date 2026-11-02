@@ -28,7 +28,11 @@ export function EditDrawer({
   onTaskUpdated,
   onOpenTask,
   tasks,
+  refreshKey,
 }: {
+  // Bumped by the board when the live stream reports a change to this ticket
+  // (from anyone: web, CLI, MCP) so the timeline and links refetch at once.
+  refreshKey?: number;
   task: Task;
   sm: StateMachine;
   users: PublicUser[];
@@ -79,10 +83,30 @@ export function EditDrawer({
       setPriority(task.priority);
       return;
     }
+    // A field the user is editing that also changed on the server (another
+    // tab, an agent — the live board hands the drawer fresh copies) keeps the
+    // user's text, but say so: saving now would overwrite that change.
+    const clash = (local: string, before: string, after: string) =>
+      before !== after && local !== before && local !== after;
+    const clashes = [
+      clash(title, prev.title, task.title) && "title",
+      clash(description, prev.description ?? "", task.description ?? "") && "description",
+      clash(assignee, prev.assignee_id ?? "", task.assignee_id ?? "") && "assignee",
+      clash(priority, prev.priority, task.priority) && "priority",
+    ].filter(Boolean);
+    if (clashes.length) {
+      toast(
+        `Someone else changed the ${clashes.join(", ")} of this ticket. Saving will overwrite it.`,
+        "info"
+      );
+    }
     setTitle((v) => (v === prev.title ? task.title : v));
     setDescription((v) => (v === (prev.description ?? "") ? (task.description ?? "") : v));
     setAssignee((v) => (v === (prev.assignee_id ?? "") ? (task.assignee_id ?? "") : v));
     setPriority((v) => (v === prev.priority ? task.priority : v));
+    // Reads the current field values only to compare; re-running on every
+    // keystroke would be wrong.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task]);
 
   // Unsaved edits: any editable field differs from the task's saved value.
@@ -486,7 +510,7 @@ export function EditDrawer({
           )}
         </div>
 
-        <LinksSection task={task} onOpenTask={onOpenTask} />
+        <LinksSection task={task} onOpenTask={onOpenTask} refreshKey={refreshKey} />
 
         <ActivitySection
           key={task.id}
@@ -494,6 +518,7 @@ export function EditDrawer({
           sm={sm}
           ticketRef={ticketRefFor}
           onDraftDirty={setCommentDirty}
+          refreshKey={refreshKey}
         />
         </div>
 
@@ -577,9 +602,11 @@ export function EditDrawer({
 function LinksSection({
   task,
   onOpenTask,
+  refreshKey,
 }: {
   task: Task;
   onOpenTask?: (id: string) => void;
+  refreshKey?: number;
 }) {
   const [links, setLinks] = useState<LinkedTicket[]>([]);
   const [ref, setRef] = useState("");
@@ -595,7 +622,7 @@ function LinksSection({
 
   useEffect(() => {
     reload();
-  }, [reload]);
+  }, [reload, refreshKey]);
 
   const add = async () => {
     if (!ref.trim()) return;

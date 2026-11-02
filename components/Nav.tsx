@@ -22,12 +22,18 @@ export function Nav({
   onMenu,
   menuOpen = false,
   menuRef,
+  onSearch,
+  live = false,
 }: {
   projects: Project[];
   selectedId: string | null;
   onMenu?: () => void;
   menuOpen?: boolean;
   menuRef?: React.Ref<HTMLButtonElement>;
+  // Opens the command palette (also bound to Ctrl/⌘+K by AppShell).
+  onSearch?: () => void;
+  // The page's live-update stream is connected.
+  live?: boolean;
 }) {
   const pathname = usePathname();
   const { user, refresh } = useAuth();
@@ -60,13 +66,13 @@ export function Nav({
     }
   }
 
-  const link = (href: string, label: string) => {
+  const link = (href: string, label: React.ReactNode) => {
     const active = pathname === href;
     const q = selectedId ? `?project=${selectedId}` : "";
     return (
       <Link
         href={href + q}
-        className={`px-2 py-1.5 text-sm sm:px-3 ${
+        className={`px-1.5 py-1.5 text-sm sm:px-3 ${
           active
             ? "bg-accent-soft text-accent ring-1 ring-accent-border"
             : "text-fg-muted hover:text-fg"
@@ -124,12 +130,61 @@ export function Nav({
           </svg>
         </button>
       )}
-      <span className="font-semibold text-fg">
+      {/* Brand hides on phones; the row needs the room for its links. */}
+      <span className="hidden font-semibold text-fg sm:inline">
         📋<span className="hidden min-[400px]:inline"> PM</span>
       </span>
+      {live && (
+        <span
+          role="status"
+          title="Live: changes from anyone appear as they happen"
+          className="-ml-1 inline-flex items-center gap-1 text-[11px] text-fg-subtle sm:-ml-2"
+        >
+          <span aria-hidden="true" className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-50 motion-reduce:hidden" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+          </span>
+          <span className="sr-only sm:not-sr-only">live</span>
+        </span>
+      )}
 
       <nav className="ml-auto flex items-center gap-0.5 sm:gap-1">
+        {onSearch && (
+          <button
+            type="button"
+            onClick={onSearch}
+            aria-label="Search (Ctrl+K)"
+            aria-keyshortcuts="Control+K Meta+K"
+            title="Search tickets and commands (Ctrl/⌘+K)"
+            className="mr-0.5 inline-flex items-center gap-2 rounded border border-border px-2 py-1.5 text-sm text-fg-muted hover:bg-bg-card hover:text-fg sm:mr-1 lg:min-w-44"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 20 20"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+            >
+              <circle cx="9" cy="9" r="5.5" />
+              <path d="M13.5 13.5 17 17" />
+            </svg>
+            <span className="hidden lg:inline">Search…</span>
+            <kbd className="ml-auto hidden rounded border border-border px-1 font-sans text-[10px] text-fg-subtle lg:inline">
+              Ctrl K
+            </kbd>
+          </button>
+        )}
         {link("/", "Board")}
+        {link(
+          "/home",
+          // Phones: a shorter label keeps the row from overflowing.
+          <>
+            <span className="sm:hidden">Mine</span>
+            <span className="hidden sm:inline">My work</span>
+          </>
+        )}
         <Link
           href={"/inbox" + (selectedId ? `?project=${selectedId}` : "")}
           aria-label={
@@ -137,7 +192,7 @@ export function Nav({
               ? `Inbox, ${inboxCount} open question${inboxCount === 1 ? "" : "s"}`
               : "Inbox"
           }
-          className={`inline-flex items-center gap-1.5 px-2 py-1.5 text-sm sm:px-3 ${
+          className={`inline-flex items-center gap-1.5 px-1.5 py-1.5 text-sm sm:px-3 ${
             pathname === "/inbox"
               ? "bg-accent-soft text-accent ring-1 ring-accent-border"
               : "text-fg-muted hover:text-fg"
@@ -155,7 +210,7 @@ export function Nav({
         </Link>
         <details className="group relative">
           <summary
-            className={`list-none px-2 py-1.5 text-sm cursor-pointer sm:px-3 ${
+            className={`list-none px-1.5 py-1.5 text-sm cursor-pointer sm:px-3 ${
               projectMenuActive
                 ? "bg-accent-soft text-accent ring-1 ring-accent-border"
                 : "text-fg-muted hover:text-fg"
@@ -174,7 +229,7 @@ export function Nav({
           onClick={() => setChoice(nextChoice(choice))}
           title={themeLabel}
           aria-label={themeLabel}
-          className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
+          className="rounded px-1.5 py-1.5 sm:px-2 text-sm text-fg-muted hover:text-fg"
         >
           {themeIcon}
         </button>
@@ -186,9 +241,23 @@ export function Nav({
             </span>
             <button
               onClick={logout}
-              className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
+              title="Logout"
+              className="rounded px-1.5 py-1.5 text-sm text-fg-muted hover:text-fg sm:px-2"
             >
-              Logout
+              {/* Icon-only on phones so the row fits; the text stays for AT. */}
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                className="h-4 w-4 sm:hidden"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M12 6l4 4-4 4M16 10H8" />
+              </svg>
+              <span className="sr-only sm:not-sr-only">Logout</span>
             </button>
           </div>
         ) : (

@@ -1404,8 +1404,9 @@ export interface Overview {
   user: PublicUser | null;
   // Open tickets assigned to the user, across projects (not in a final status).
   mine: (Task & { has_more_description: boolean; project_name: string })[];
-  // Tickets agents are working on: assigned to an agent user, past the first
-  // and ready statuses, not final. `stale` = untouched for STALE_AFTER_MS.
+  // Tickets agents are working on: assigned to an agent user, in a status
+  // ordered after the project's ready status and not final (so backlog,
+  // blocked and todo don't count). `stale` = untouched for STALE_AFTER_MS.
   agents: (Task & { has_more_description: boolean; project_name: string; stale: boolean })[];
   inbox_count: number;
 }
@@ -1434,9 +1435,11 @@ export function overview(userRef?: string | null): Overview {
          JOIN projects p ON p.id = t.project_id
          JOIN users u ON u.id = t.assignee_id AND u.kind = 'agent'
         WHERE ${open}
-          AND t.status_key <> COALESCE(
-                (SELECT s.key FROM statuses s WHERE s.project_id = p.id AND s.key = p.ready_status_key), '${READY_STATUS_KEY}')
-          AND t.status_key <> (SELECT s.key FROM statuses s WHERE s.project_id = t.project_id ORDER BY s.sort_order LIMIT 1)
+          AND (SELECT s.sort_order FROM statuses s WHERE s.project_id = t.project_id AND s.key = t.status_key)
+              > COALESCE(
+                  (SELECT s.sort_order FROM statuses s WHERE s.project_id = p.id AND s.key = p.ready_status_key),
+                  (SELECT s.sort_order FROM statuses s WHERE s.project_id = p.id AND s.key = '${READY_STATUS_KEY}'),
+                  0)
         ORDER BY t.updated_at LIMIT 200`
     )
     .all() as any[]).map((r) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -26,6 +27,33 @@ import { TaskCard } from "./TaskCard";
 import { EditDrawer } from "./EditDrawer";
 import { BoardSkeleton } from "./ui";
 import { toast } from "./Toast";
+import { BoardFilterBar } from "./BoardFilterBar";
+import {
+  EMPTY_FILTER,
+  countLabel,
+  isFilterActive,
+  matchesFilter,
+  readFilter,
+  writeFilter,
+  type BoardFilter,
+} from "./filter-logic";
+import { boardPollMs, parseStreamEvent } from "./live-logic";
+
+const LIVE_DEBOUNCE_MS = 300;
+// After the browser gives up on the stream (non-retryable error), try a fresh
+// connection this much later; the fast poll covers the gap.
+const LIVE_RECONNECT_MS = 15000;
+
+// Typing context where a bare "/" is text, not the filter shortcut.
+function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  return (
+    el.isContentEditable ||
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT"
+  );
+}
 
 // Screen-reader narration for drag-and-drop. @dnd-kit announces these via a
 // visually-hidden live region so non-visual users can follow card moves.
@@ -80,11 +108,16 @@ function Column({
   onAdd,
   onArchiveAll,
   hint,
+  total,
+  filtered,
 }: {
   statusKey: string;
   label: string;
   isFinal: boolean;
+  // Cards shown (after the filter bar), and the column's unfiltered size.
   tasks: Task[];
+  total: number;
+  filtered: boolean;
   onOpen: (t: Task) => void;
   onAdd: (statusKey: string, title: string) => void;
   onArchiveAll: (statusKey: string) => void;
@@ -108,7 +141,11 @@ function Column({
   return (
     <section
       role="region"
-      aria-label={`${label} column, ${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
+      aria-label={
+        filtered
+          ? `${label} column, ${tasks.length} of ${total} task${total === 1 ? "" : "s"} shown`
+          : `${label} column, ${total} task${total === 1 ? "" : "s"}`
+      }
       className={`flex h-full max-h-full w-72 max-w-[85vw] shrink-0 flex-col rounded-lg bg-bg-soft transition-opacity ${
         illegal ? "opacity-40" : ""
       }`}
@@ -121,16 +158,22 @@ function Column({
               final
             </span>
           )}
-          <span className="text-xs text-fg-subtle">{tasks.length}</span>
+          <span
+            className={`text-xs ${filtered ? "text-accent" : "text-fg-subtle"}`}
+            title={filtered ? `${tasks.length} of ${total} shown by the filter` : undefined}
+          >
+            {countLabel(tasks.length, total, filtered)}
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          {isFinal && tasks.length > 0 && (
+          {/* Bulk archive acts on the whole column, filtered or not. */}
+          {isFinal && total > 0 && (
             <button
               onClick={() => onArchiveAll(statusKey)}
               className="rounded px-1 text-xs text-fg-subtle hover:text-fg"
-              title={`Archive all ${tasks.length} ticket(s) in ${label}`}
+              title={`Archive all ${total} ticket(s) in ${label}`}
             >
-              Archive all ({tasks.length})
+              Archive all ({total})
             </button>
           )}
           <button
@@ -198,6 +241,33 @@ export function Board() {
   const [active, setActive] = useState<Task | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Live stream (/api/stream) connected → "live" dot + slow backstop poll.
+  const [live, setLive] = useState(false);
+  // Bumped when the stream reports a change to the open drawer's ticket.
+  const [drawerTick, setDrawerTick] = useState(0);
+  const draggingRef = useRef(dragging);
+  draggingRef.current = dragging;
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+
+  // Filter bar state lives in the URL (?q=&assignee=&priority=) — shareable.
+  const router = useRouter();
+  const params = useSearchParams();
+  const filter = readFilter(params);
+  const filterActive = isFilterActive(filter);
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  // Merge into whatever the URL holds right now (not a render snapshot), so a
+  // debounced text write can't undo a select change made in between.
+  const setFilter = useCallback(
+    (patch: Partial<BoardFilter>) => {
+      const cur = new URLSearchParams(window.location.search);
+      const sp = writeFilter(cur, { ...readFilter(cur), ...patch });
+      const qs = sp.toString();
+      router.replace(qs ? `?${qs}` : window.location.pathname, { scroll: false });
+    },
+    [router]
+  );
+  const clearFilter = useCallback(() => setFilter(EMPTY_FILTER), [setFilter]);
 
   // Mouse: start dragging after a small 5px move (desktop, unchanged behavior).
   // Touch: require a deliberate long-press before a drag begins, so ordinary
@@ -234,13 +304,110 @@ export function Board() {
   }, [selectedId, loadSm]);
 
   // Poll tasks for freshness (catches CLI/agent edits). Pause while dragging
-  // or while the drawer is open to avoid clobbering local interaction.
+  // or while the drawer is open to avoid clobbering local interaction. While
+  // the live stream is connected this is only a slow backstop.
   usePoll(
     () => {
       if (selectedId && !dragging && !editing) loadTasks(selectedId).catch(() => {});
     },
-    [selectedId, dragging, editing]
+    [selectedId, dragging, editing, live],
+    boardPollMs(live)
   );
+
+  // Live board: every change in this project (web, CLI, MCP alike) arrives as
+  // an `activity` event. Bursts are coalesced into one reload; a drag in
+  // progress defers it so the card under the pointer isn't yanked away. If the
+  // open drawer's ticket changed, its timeline/links refetch and it adopts the
+  // fresh copy (the drawer keeps any field the user is editing).
+  useEffect(() => {
+    if (!selectedId || typeof EventSource === "undefined") return;
+    const pid = selectedId;
+    let es: EventSource | null = null;
+    let disposed = false;
+    let wasDown = false;
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let changed = new Set<string>();
+
+    const flush = () => {
+      debounce = undefined;
+      if (disposed) return;
+      if (draggingRef.current) {
+        debounce = setTimeout(flush, LIVE_DEBOUNCE_MS);
+        return;
+      }
+      const ids = changed;
+      changed = new Set();
+      loadTasks(pid).catch(() => {});
+      const open = editingRef.current;
+      if (open && ids.has(open.id)) {
+        setDrawerTick((n) => n + 1);
+        api
+          .getTask(open.id)
+          .then((fresh) =>
+            setEditing((cur) =>
+              cur && cur.id === fresh.id && fresh.version > cur.version ? fresh : cur
+            )
+          )
+          .catch(() => {});
+      }
+    };
+
+    const connect = () => {
+      if (disposed) return;
+      es = new EventSource(`/api/stream?project=${encodeURIComponent(pid)}`);
+      es.onopen = () => {
+        setLive(true);
+        // Our own reconnect starts from "now": catch up on anything missed.
+        if (wasDown) loadTasks(pid).catch(() => {});
+        wasDown = false;
+      };
+      es.onerror = () => {
+        setLive(false);
+        wasDown = true;
+        // CONNECTING = the browser retries by itself (resuming via
+        // Last-Event-ID); CLOSED = it gave up, so start over later.
+        if (es && es.readyState === EventSource.CLOSED) {
+          es.close();
+          es = null;
+          retry = setTimeout(connect, LIVE_RECONNECT_MS);
+        }
+      };
+      es.addEventListener("activity", (e) => {
+        const ev = parseStreamEvent((e as MessageEvent).data);
+        if (!ev) return;
+        changed.add(ev.task_id);
+        clearTimeout(debounce);
+        debounce = setTimeout(flush, LIVE_DEBOUNCE_MS);
+      });
+    };
+
+    connect();
+    return () => {
+      disposed = true;
+      clearTimeout(debounce);
+      clearTimeout(retry);
+      es?.close();
+      setLive(false);
+    };
+  }, [selectedId, loadTasks]);
+
+  // "/" focuses the filter box, unless the user is typing somewhere or a
+  // dialog (drawer, palette) is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target) || editingRef.current) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      const input = filterInputRef.current;
+      if (!input) return;
+      e.preventDefault();
+      input.focus();
+      input.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // The `task` URL param is the source of truth for the open drawer.
   useEffect(() => {
@@ -359,6 +526,13 @@ export function Board() {
         (a, b) =>
           priorityOrder(a.priority) - priorityOrder(b.priority) || a.rank - b.rank
       );
+  const meId = user?.id ?? null;
+  const shownOf = (list: Task[]) =>
+    filterActive ? list.filter((t) => matchesFilter(t, filter, meId)) : list;
+  // Totals cover visible columns only, so "x of y" matches what's on screen.
+  const visibleStatuses = sm?.statuses.filter((s) => !s.hidden) ?? [];
+  const onBoard = tasks.filter((t) => visibleStatuses.some((s) => s.key === t.status_key));
+  const shownTotal = shownOf(onBoard).length;
 
   return (
     <>
@@ -368,6 +542,7 @@ export function Board() {
         select={select}
         reload={reload}
         contentClassName="flex min-h-0 flex-1 flex-col"
+        live={live}
       >
         {!selectedId ? (
           loaded ? (
@@ -380,38 +555,55 @@ export function Board() {
         ) : !sm ? (
           <BoardSkeleton />
         ) : (
-          <DndContext
-            sensors={sensors}
-            accessibility={{
-              announcements: dndAnnouncements,
-              screenReaderInstructions: dndInstructions,
-            }}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onDragCancel={() => {
-              setDragging(false);
-              setActive(null);
-            }}
-          >
-            <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 sm:p-4">
-              {sm?.statuses.filter((s) => !s.hidden).map((s) => (
-                <Column
-                  key={s.key}
-                  statusKey={s.key}
-                  label={s.label}
-                  isFinal={s.is_final}
-                  tasks={byStatus(s.key)}
-                  onOpen={(t) => openTask(ticketRef(t))}
-                  onAdd={addTask}
-                  onArchiveAll={archiveAll}
-                  hint={active ? dropHint(sm, active.status_key, s.key) : null}
-                />
-              ))}
-            </div>
-            <DragOverlay>
-              {active ? <TaskCard task={active} overlay /> : null}
-            </DragOverlay>
-          </DndContext>
+          <>
+            <BoardFilterBar
+              filter={filter}
+              onChange={setFilter}
+              onClear={clearFilter}
+              users={users}
+              me={user}
+              shown={shownTotal}
+              total={onBoard.length}
+              inputRef={filterInputRef}
+            />
+            <DndContext
+              sensors={sensors}
+              accessibility={{
+                announcements: dndAnnouncements,
+                screenReaderInstructions: dndInstructions,
+              }}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragCancel={() => {
+                setDragging(false);
+                setActive(null);
+              }}
+            >
+              <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3 sm:p-4">
+                {visibleStatuses.map((s) => {
+                  const all = byStatus(s.key);
+                  return (
+                    <Column
+                      key={s.key}
+                      statusKey={s.key}
+                      label={s.label}
+                      isFinal={s.is_final}
+                      tasks={shownOf(all)}
+                      total={all.length}
+                      filtered={filterActive}
+                      onOpen={(t) => openTask(ticketRef(t))}
+                      onAdd={addTask}
+                      onArchiveAll={archiveAll}
+                      hint={active ? dropHint(sm, active.status_key, s.key) : null}
+                    />
+                  );
+                })}
+              </div>
+              <DragOverlay>
+                {active ? <TaskCard task={active} overlay /> : null}
+              </DragOverlay>
+            </DndContext>
+          </>
         )}
       </AppShell>
 
@@ -427,6 +619,7 @@ export function Board() {
           // land after it closed or switched — don't reopen/clobber it).
           onTaskUpdated={(t) => setEditing((cur) => (cur && cur.id === t.id ? t : cur))}
           onOpenTask={openTask}
+          refreshKey={drawerTick}
         />
       )}
     </>

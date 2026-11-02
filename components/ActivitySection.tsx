@@ -38,12 +38,15 @@ export function ActivitySection({
   sm,
   ticketRef,
   onDraftDirty,
+  refreshKey,
 }: {
   task: Task;
   sm: StateMachine;
   ticketRef: (id: string) => string;
   // Reports whether an unsent comment draft exists (drawer close guard).
   onDraftDirty?: (dirty: boolean) => void;
+  // Bumped when the live stream reports a change to this ticket → refetch now.
+  refreshKey?: number;
 }) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -81,10 +84,11 @@ export function ActivitySection({
     }
   }, [task.id]);
 
-  // Initial load + refetch after the drawer saves/moves this ticket.
+  // Initial load + refetch after the drawer saves/moves this ticket, or when
+  // the board's live stream says someone else changed it.
   useEffect(() => {
     void fetchNew();
-  }, [fetchNew, task.version]);
+  }, [fetchNew, task.version, refreshKey]);
 
   usePoll(fetchNew, [fetchNew], 5000);
 
