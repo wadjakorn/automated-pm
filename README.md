@@ -121,6 +121,12 @@ Without `npm link`, the same commands work via `npm run cli -- <args>`.
 Illegal moves (no transition, or out of a final state) return HTTP 422 with a reason.
 Concurrent edits are guarded by an optimistic `version`; a stale write returns 409.
 
+## MCP
+
+Agents that prefer tools over a shell can use `http://localhost:3000/api/mcp`
+(Streamable HTTP, Bearer `PM_TOKEN`). Setup for Claude Code and Codex is in
+[AGENTS.md](AGENTS.md#mcp-claude-code-codex).
+
 ## Backup & migrate (DB export / restore)
 
 The whole database lives in one SQLite file (`./data/pm.db`) — **projects, tasks,
