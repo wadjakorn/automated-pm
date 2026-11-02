@@ -239,6 +239,16 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE projects ADD COLUMN archived_at TEXT");
   }
 
+  // Actor kind: 'human' or 'agent'. Agents are trusted to do work but not to
+  // approve it — e.g. they may not create a ticket straight into the ready
+  // status. Literal default so existing users migrate as humans.
+  const userCols = new Set(
+    (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name)
+  );
+  if (!userCols.has("kind")) {
+    db.exec("ALTER TABLE users ADD COLUMN kind TEXT NOT NULL DEFAULT 'human'");
+  }
+
   // Project names are unique among live (non-deleted) projects, so `--project`
   // can take a name instead of an id. Partial index ignores soft-deleted rows,
   // so a name frees up after its project is trashed. Best-effort: if a legacy

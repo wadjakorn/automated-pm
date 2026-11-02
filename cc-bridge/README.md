@@ -11,13 +11,14 @@ install on the machine, no inbound listener, no Tailscale binding — the machin
 Claude Code (your machine, a built-in scheduled routine, every N min)
    pm ready --project <name> --json         # GET /api/cc-bridge/ready
    for each ready ticket:
-     pm task move --id <id> --status doing   # claim (optimistic version = lock)
+     pm task move --id <id> --status doing --from todo   # claim: 409 if someone got it first
      implement → run tests → open PR
      pm task move --id <id> --status completed   # → Code Review
 ```
 
-A claimed ticket leaves `todo`, so the next poll never returns it twice. Status
-is the lock.
+A claimed ticket leaves `todo`, so the next poll never returns it twice, and
+`--from todo` makes the claim itself atomic: of two pollers racing for one
+ticket, exactly one wins and the other gets `409 status_changed`.
 
 ## One-time setup
 
@@ -50,7 +51,8 @@ is the lock.
    every few minutes with this prompt (pin your project name):
 
    > Run `pm ready --project automated-pm --json`. For each ticket: claim it with
-   > `pm task move --id <id> --status doing`, then implement it in the repo at its
+   > `pm task move --id <id> --status doing --from todo` (on `409 status_changed`
+   > skip that ticket), then implement it in the repo at its
    > `repo` URL — follow the repo's conventions, run its tests, open a PR with
    > `gh pr create`. On success move it to Code Review (`pm task move --id <id>
    > --status completed`). If blocked, `pm task move --id <id> --status blocked`

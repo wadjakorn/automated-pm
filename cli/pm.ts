@@ -112,7 +112,7 @@ const proj = (f: Flags): string => encodeURIComponent(need(f, "project"));
 const HELP = `pm — Project Manager CLI
 
   # Auth is OPTIONAL. Set PM_TOKEN=<api_token> to attribute created tasks to you.
-  pm user create --username <u> --password <p>   # -> { user, api_token }
+  pm user create --username <u> --password <p> [--kind human|agent]   # -> { user, api_token }
   pm user list
   pm login --username <u> --password <p>          # -> { api_token }; export PM_TOKEN
   pm whoami                                        # current user (needs PM_TOKEN) or null
@@ -145,7 +145,8 @@ const HELP = `pm — Project Manager CLI
   pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <p>]
   # every --id below accepts the nanoid OR the human ticket key (e.g. PM-0002)
   pm task get --id <id|key> [--include-deleted]   # fetch one task directly
-  pm task move --id <id|key> --status <key> [--version <n>]
+  # --from <key>: move only if the ticket is still in <key> (claim); else 409 status_changed
+  pm task move --id <id|key> --status <key> [--from <key>] [--version <n>]
   pm task update --id <id|key> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <p>]
   pm task delete --id <id|key>
   pm task restore --id <id|key>
@@ -269,6 +270,7 @@ async function main() {
         await api("POST", "/api/auth/register", {
           username: need(f, "username"),
           password: need(f, "password"),
+          kind: typeof f.kind === "string" ? f.kind : undefined,
         })
       );
     case "user list":
@@ -440,6 +442,7 @@ async function main() {
         "task",
         await api("PATCH", `/api/tasks/${need(f, "id")}`, {
           status: need(f, "status"),
+          expect_from: typeof f.from === "string" ? f.from : undefined,
           version: f.version !== undefined ? Number(f.version) : undefined,
         })
       );

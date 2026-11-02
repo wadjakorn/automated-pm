@@ -97,9 +97,12 @@ export interface ReadyTicket {
 
 // A user account. password_hash and api_token are secrets — never serialize
 // them to clients. PublicUser is the safe shape returned by the API.
+export type UserKind = "human" | "agent";
+
 export interface User {
   id: string;
   username: string;
+  kind: UserKind;
   password_hash: string;
   api_token: string;
   created_at: string;
@@ -109,6 +112,7 @@ export interface User {
 export interface PublicUser {
   id: string;
   username: string;
+  kind: UserKind;
   created_at: string;
 }
 
