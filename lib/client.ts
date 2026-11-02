@@ -22,12 +22,39 @@ export class ApiClientError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+// A task summary as served by search/overview: the description is cut to a
+// 200-char excerpt and `has_more_description` says whether it was cut.
+export type TaskSummary = Task & { has_more_description: boolean };
+export type TaskWithProject = TaskSummary & { project_name: string };
+
+// One ranked hit from GET /api/search. `snippet` is the matched text with
+// [brackets] around each hit, or null (exact ticket-key hit / short terms).
+export interface SearchHit {
+  task: TaskSummary;
+  project_name: string;
+  snippet: string | null;
+}
+
+// GET /api/overview: the logged-in user's cross-project home.
+export interface Overview {
+  user: PublicUser | null;
+  mine: TaskWithProject[];
+  agents: (TaskWithProject & { stale: boolean })[];
+  inbox_count: number;
+}
+
+async function req<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal
+): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
+    signal,
   });
   const json = await res.json().catch(() => null);
   if (!res.ok) throw new ApiClientError(res.status, json);
@@ -215,4 +242,23 @@ export const api = {
     const q = qs.toString();
     return req<InboxItem[]>("GET", `/api/inbox${q ? `?${q}` : ""}`);
   },
+
+  // search + cross-project home
+  search: (
+    q: string,
+    opts?: { project?: string; status?: string; assignee?: string; limit?: number },
+    signal?: AbortSignal
+  ) => {
+    const qs = new URLSearchParams({ q });
+    if (opts?.project) qs.set("project", opts.project);
+    if (opts?.status) qs.set("status", opts.status);
+    if (opts?.assignee) qs.set("assignee", opts.assignee);
+    if (opts?.limit) qs.set("limit", String(opts.limit));
+    return req<SearchHit[]>("GET", `/api/search?${qs.toString()}`, undefined, signal);
+  },
+  overview: (user?: string) =>
+    req<Overview>(
+      "GET",
+      `/api/overview${user ? `?user=${encodeURIComponent(user)}` : ""}`
+    ),
 };
