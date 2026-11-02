@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
-import { handle } from "@/lib/api-errors";
 import { removeLink } from "@/lib/repo";
+import { handleWrite } from "@/lib/actor";
 
 export const dynamic = "force-dynamic";
 
 // linkId identifies the edge directly, so removing from either ticket works.
 type Ctx = { params: Promise<{ id: string; linkId: string }> };
 
-export function DELETE(_req: NextRequest, { params }: Ctx) {
-  return handle(async () => removeLink((await params).linkId));
+export function DELETE(req: NextRequest, { params }: Ctx) {
+  return handleWrite(req, async () => removeLink((await params).linkId));
 }

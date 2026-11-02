@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
-import { handle } from "@/lib/api-errors";
 import { getTask, moveTask, softDeleteTask, updateTask } from "@/lib/repo";
+import { handleRead, handleWrite } from "@/lib/actor";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export function GET(req: NextRequest, { params }: Ctx) {
-  return handle(async () => {
+  return handleRead(req, async () => {
     const includeDeleted =
       new URL(req.url).searchParams.get("includeDeleted") === "true";
     return getTask((await params).id, includeDeleted);
@@ -20,7 +20,7 @@ export function GET(req: NextRequest, { params }: Ctx) {
 // `expect_from` makes the move conditional on the current status (claim).
 // `assignee`: omit = unchanged, null/"" = unassign, id|username = assign.
 export function PATCH(req: NextRequest, { params }: Ctx) {
-  return handle(async () => {
+  return handleWrite(req, async () => {
     const { id } = await params;
     const body = await req.json();
     if (body.status !== undefined) {
@@ -34,6 +34,6 @@ export function PATCH(req: NextRequest, { params }: Ctx) {
   });
 }
 
-export function DELETE(_req: NextRequest, { params }: Ctx) {
-  return handle(async () => softDeleteTask((await params).id));
+export function DELETE(req: NextRequest, { params }: Ctx) {
+  return handleWrite(req, async () => softDeleteTask((await params).id));
 }
