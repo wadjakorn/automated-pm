@@ -93,6 +93,17 @@ describe("overview", () => {
     expect(agentIds).not.toContain(queued.id);
     expect(ov.agents.find((t) => t.id === work.id)?.stale).toBe(true);
     expect(ov.inbox_count).toBeGreaterThanOrEqual(1);
+
+    // A project whose first status is "blocked" (like capz): backlog is still
+    // before ready, so it isn't "at work"; blocked isn't either.
+    const p3 = repo.createProject("ov-3");
+    repo.addStatus(p3.id, { key: "blocked", label: "Blocked" });
+    repo.updateStatus(p3.id, "blocked", { sort_order: -1 });
+    const parked = repo.createTask(p3.id, { title: "parked", assignee: "ov-bot", status: "blocked" });
+    const back = repo.createTask(p3.id, { title: "back", assignee: "ov-bot", status: "backlog" });
+    const ids2 = repo.overview(me.id).agents.map((t) => t.id);
+    expect(ids2).not.toContain(parked.id);
+    expect(ids2).not.toContain(back.id);
     expect(repo.overview(null).mine).toEqual([]);
   });
 });
