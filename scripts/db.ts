@@ -15,7 +15,7 @@
  *   tsx scripts/db.ts user-kind <user> <human|agent> # mark a user as human/agent (admin)
  *
  * Why a binary .db copy: SQLite's file format is architecture-independent, so a
- * backup taken on macOS restores cleanly on the dietpi (ARM) home server. The
+ * backup taken on macOS restores cleanly on any other machine, ARM included. The
  * native online-backup API folds the WAL in, so an open dev server can't produce
  * a torn copy the way a plain `cp` of pm.db (with a live -wal) would.
  *

@@ -41,7 +41,7 @@ ticket, exactly one wins and the other gets `409 status_changed`.
 3. **Env for the routine** (the machine that runs Claude Code):
 
    ```bash
-   export PM_API=http://dietpi:3000        # your PM server URL
+   export PM_API=http://localhost:3000     # your PM server URL
    export PM_TOKEN=<api_token from step 2>
    # NEVER set ANTHROPIC_API_KEY — the routine must use your Max subscription,
    # not the metered API.
