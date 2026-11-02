@@ -21,6 +21,8 @@ import {
   listReadyTickets,
   listTasks,
   moveTask,
+  overview,
+  searchTasks,
   updateTask,
 } from "./repo";
 import { allowedTargets } from "./statemachine";
@@ -299,6 +301,40 @@ export function buildMcpServer(actor: User | null): McpServer {
       annotations: { readOnlyHint: true },
     },
     async ({ project, assignee }) => run(() => listInbox({ project, assignee }))
+  );
+
+  server.registerTool(
+    "pm_search_tasks",
+    {
+      title: "Search tickets",
+      description:
+        "Full-text search across projects over titles, descriptions and comments (substring match; Thai works; " +
+        "terms under 3 characters only filter titles/descriptions). Archived tickets included. A ticket key is " +
+        "an exact hit. Returns { task (summary), project_name, snippet }. " +
+        UNTRUSTED,
+      inputSchema: {
+        q: z.string().min(1),
+        project: z.string().optional(),
+        status: z.string().optional(),
+        assignee: z.string().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async (args) => run(() => searchTasks(args))
+  );
+
+  server.registerTool(
+    "pm_my_work",
+    {
+      title: "My work",
+      description:
+        "Cross-project home for the connected user (or `user`): open tickets assigned to them, tickets agents are " +
+        "working on (stale = untouched 2h+), and the open-question count.",
+      inputSchema: { user: z.string().optional().describe("Defaults to the connected user") },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ user }) => run(() => overview(user || actor?.id || null))
   );
 
   return server;

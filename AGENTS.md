@@ -111,6 +111,13 @@ pm inbox   [--project <id|name>] [--assignee <u>]      # open questions waiting 
 pm resolve --comment <commentId>                       # close a question without answering
 pm events  [--since <seq>] [--project <id|name>]       # cross-ticket change feed (poll with last seq)
 
+# Search & home
+pm search <words…> [--project <p>] [--status <key>] [--assignee <u>] [--limit <n>]
+#   titles + descriptions + comments, across projects, archived included; Thai works
+#   (substring match; terms under 3 chars only filter titles/descriptions); a ticket key is an exact hit
+pm mine [--user <u>]                                   # my open tickets everywhere + agents at work (STALE after 2h) + inbox count
+# live changes: GET /api/stream (Server-Sent Events, `event: activity`), or poll pm events --since <seq>
+
 # changing --name or --remote-url is a guarded edit: it needs --confirm.
 # --default-status (not guarded) sets the status new tasks land in without an
 # explicit --status; '' clears it (→ first status).
@@ -206,7 +213,8 @@ stateless, same `PM_TOKEN` as the CLI). Same rules as the API — it calls the
 same code. Tools: `pm_whoami`, `pm_list_projects`, `pm_get_workflow`,
 `pm_list_tasks` (summary by default), `pm_list_ready`, `pm_get_task` (full,
 with `next_statuses` and links), `pm_create_task`, `pm_update_task`,
-`pm_move_task` (`from` = claim), `pm_comment`, `pm_list_inbox`. `pm_get_task`
+`pm_move_task` (`from` = claim), `pm_comment`, `pm_list_inbox`,
+`pm_search_tasks`, `pm_my_work`. `pm_get_task`
 includes the ticket's last 50 history entries. Errors come back as `{error, message, hint}`.
 Admin actions (delete project, state machine, users, tokens) are CLI/web only.
 
