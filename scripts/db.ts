@@ -12,6 +12,7 @@
  *                             [--db-only]             # legacy single .db (no images)
  *   tsx scripts/db.ts restore --in <file> [--yes]    # replaces live DB + uploads (snapshots first)
  *   tsx scripts/db.ts info                           # show DB path + row counts
+ *   tsx scripts/db.ts user-kind <user> <human|agent> # mark a user as human/agent (admin)
  *
  * Why a binary .db copy: SQLite's file format is architecture-independent, so a
  * backup taken on macOS restores cleanly on the dietpi (ARM) home server. The
@@ -373,6 +374,30 @@ function cmdInfo() {
   ok(`uploads: ${UPLOADS_DIR}  (${nImg} image${nImg === 1 ? "" : "s"})`);
 }
 
+// Mark a user as human or agent. Host-only on purpose: the HTTP API has no
+// roles, so an agent token must not be able to flip itself back to human.
+function cmdUserKind(args: string[]) {
+  const [ref, kind] = args.filter((a) => !a.startsWith("--"));
+  if (!ref || (kind !== "human" && kind !== "agent"))
+    die("usage: tsx scripts/db.ts user-kind <username|id> <human|agent>");
+  if (!existsSync(DB_PATH)) die(`live DB not found at ${DB_PATH} (set PM_DB_PATH?)`);
+  const db = new Database(DB_PATH);
+  try {
+    const cols = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map(
+      (c) => c.name
+    );
+    if (!cols.includes("kind"))
+      die("users.kind column missing — start the updated server once so it migrates");
+    const r = db
+      .prepare("UPDATE users SET kind=?, updated_at=? WHERE id=? OR username=?")
+      .run(kind, new Date().toISOString(), ref, ref);
+    if (r.changes === 0) die(`user "${ref}" not found`);
+    ok(`${ref} → ${kind}`);
+  } finally {
+    db.close();
+  }
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const f = parseFlags(rest);
@@ -383,12 +408,15 @@ async function main() {
       return cmdRestore(f);
     case "info":
       return cmdInfo();
+    case "user-kind":
+      return cmdUserKind(rest);
     default:
       process.stdout.write(
         `db — export / restore the SQLite database (includes users) + image uploads\n\n` +
           `  tsx scripts/db.ts export  [--out <file>] [--db-only]\n` +
           `  tsx scripts/db.ts restore --in <file> [--yes]\n` +
-          `  tsx scripts/db.ts info\n\n` +
+          `  tsx scripts/db.ts info\n` +
+          `  tsx scripts/db.ts user-kind <user> <human|agent>\n\n` +
           `DB path : ${DB_PATH} (override with PM_DB_PATH)\n` +
           `Uploads : ${UPLOADS_DIR}\n`
       );

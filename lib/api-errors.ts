@@ -28,6 +28,21 @@ export const badRequest = (message: string) =>
 export const unauthorized = (message = "invalid credentials") =>
   new ApiError(401, "unauthorized", message);
 
+// Authenticated, but this actor may not do this (e.g. an agent creating a
+// ticket straight into the ready status, which is the owner's accept gate).
+export const forbidden = (message: string) =>
+  new ApiError(403, "forbidden", message);
+
+// A move guarded by expect_from found the ticket in another status: someone
+// else moved it first. `current` is the fresh row so the caller can reconcile.
+export const statusChanged = (expected: string, current: unknown) =>
+  new ApiError(
+    409,
+    "status_changed",
+    `expected status "${expected}" but the ticket has moved on`,
+    { current }
+  );
+
 // Illegal state-machine move.
 export const illegalTransition = (reason: string) =>
   new ApiError(422, "illegal_transition", reason);

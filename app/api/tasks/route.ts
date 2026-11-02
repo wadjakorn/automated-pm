@@ -21,13 +21,18 @@ export function GET(req: NextRequest) {
   });
 }
 
-// POST { project, title, description?, status?, assignee? }
+// POST { project, title, description?, status?, assignee?, priority? }
 // creator_id is taken from the authenticated caller (nullable when anonymous).
+// Only a human caller may create straight into the ready status.
 export function POST(req: NextRequest) {
   return handle(async () => {
     const body = await req.json();
     if (!body.project) throw badRequest("project is required");
     const me = currentUser(req);
-    return createTask(body.project, { ...body, creatorId: me?.id ?? null });
+    return createTask(body.project, {
+      ...body,
+      creatorId: me?.id ?? null,
+      actorKind: me?.kind ?? null,
+    });
   });
 }

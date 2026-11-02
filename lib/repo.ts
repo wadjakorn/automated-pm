@@ -1,7 +1,15 @@
 import { customAlphabet, nanoid } from "nanoid";
 import { getDb } from "./db";
 import { buildDefaultStateMachine, canTransition } from "./statemachine";
-import { badRequest, conflict, illegalTransition, notFound, unauthorized } from "./api-errors";
+import {
+  badRequest,
+  conflict,
+  forbidden,
+  illegalTransition,
+  notFound,
+  statusChanged,
+  unauthorized,
+} from "./api-errors";
 import { hashPassword, newApiToken, verifyPassword } from "./auth";
 import { DEFAULT_PRIORITY, isPriority, type Priority } from "./priority";
 import { isRemoteRepoUrl, normalizeRemoteRepoUrl } from "./repo-url";
@@ -20,10 +28,21 @@ import type {
   Task,
   StateMachine,
   User,
+  UserKind,
   PublicUser,
   LinkedTicket,
   ReadyTicket,
 } from "./types";
+
+// The status the poll routines treat as "ready to work". Entering it is the
+// owner's accept gate, so agents may not create tickets straight into it.
+export const READY_STATUS_KEY = "todo";
+
+function normUserKind(k: unknown): UserKind {
+  if (k === undefined || k === null || k === "") return "human";
+  if (k === "human" || k === "agent") return k;
+  throw badRequest(`unknown user kind "${String(k)}" (expected human|agent)`);
+}
 
 // Validate an optional priority input; returns the canonical value or throws.
 function normPriority(p: unknown, fallback: Priority): Priority {
@@ -118,24 +137,37 @@ function mapTask(r: any): Task {
 const publicUser = (u: User): PublicUser => ({
   id: u.id,
   username: u.username,
+  kind: u.kind,
   created_at: u.created_at,
 });
 
 // ---------------- Users ----------------
 
-export function createUser(username: string, password: string): User {
+export function createUser(username: string, password: string, kind?: string): User {
   const uname = username?.trim();
   if (!uname) throw badRequest("username is required");
   if (!password) throw badRequest("password is required");
+  const userKind = normUserKind(kind);
   const db = getDb();
   const dup = db.prepare("SELECT 1 FROM users WHERE username = ?").get(uname);
   if (dup) throw badRequest(`username "${uname}" already exists`);
   const uid = id();
   const ts = now();
   db.prepare(
-    "INSERT INTO users (id, username, password_hash, api_token, created_at, updated_at) VALUES (?,?,?,?,?,?)"
-  ).run(uid, uname, hashPassword(password), newApiToken(), ts, ts);
+    "INSERT INTO users (id, username, password_hash, api_token, kind, created_at, updated_at) VALUES (?,?,?,?,?,?,?)"
+  ).run(uid, uname, hashPassword(password), newApiToken(), userKind, ts, ts);
   return getUser(uid);
+}
+
+// Mark a user as a human or an agent. Deliberately not exposed over HTTP:
+// there are no roles yet, so any token could otherwise promote itself back to
+// human. Run it on the host via `npm run db -- user-kind <user> <kind>`.
+export function setUserKind(ref: string, kind: string): PublicUser {
+  const u = getUser(ref);
+  getDb()
+    .prepare("UPDATE users SET kind=?, updated_at=? WHERE id=?")
+    .run(normUserKind(kind), now(), u.id);
+  return publicUser(getUser(u.id));
 }
 
 // Resolve a user by id OR username (id first, mirrors getProject).
@@ -600,7 +632,7 @@ export function listTasks(
 export function listReadyTickets(
   opts: { projectRef?: string; assignee?: string; status?: string } = {}
 ): ReadyTicket[] {
-  const status = opts.status ?? "todo";
+  const status = opts.status ?? READY_STATUS_KEY;
   let pid: string | null = null;
   if (opts.projectRef) {
     try {
@@ -689,6 +721,9 @@ export function createTask(
     creatorId?: string | null;
     assignee?: string | null;
     priority?: string;
+    // Kind of the calling actor: null = anonymous, undefined = internal call
+    // (tests, scripts) that skips the ready-gate check.
+    actorKind?: UserKind | null;
   }
 ): Task {
   const project = getProject(projectId);
@@ -705,6 +740,12 @@ export function createTask(
   const statusKey = data.status ?? validDefault ?? sm.statuses[0]?.key;
   if (!sm.statuses.some((s) => s.key === statusKey))
     throw badRequest(`unknown status "${statusKey}"`);
+  // Owner accept gate: only a human may put a ticket straight into ready.
+  // Agents (and anonymous callers) create it earlier and a human moves it.
+  if (data.actorKind !== undefined && data.actorKind !== "human" && statusKey === READY_STATUS_KEY)
+    throw forbidden(
+      `only a human can create a ticket directly in "${READY_STATUS_KEY}"; create it in an earlier status and let a human move it`
+    );
   const assigneeId =
     data.assignee == null || data.assignee === "" ? null : resolveUserId(data.assignee);
   const priority = normPriority(data.priority, DEFAULT_PRIORITY);
@@ -786,10 +827,15 @@ export function updateTask(
 export function moveTask(
   taskId: string,
   toStatus: string,
-  opts: { version?: number; rank?: number } = {}
+  // expectFrom: only move if the ticket is still in this status — the claim
+  // primitive. Without it a move to the current status is a harmless no-op
+  // (callers such as capz-loop's stale-run recovery rely on that).
+  opts: { version?: number; rank?: number; expectFrom?: string } = {}
 ): Task {
   const t = getTask(taskId);
   taskId = t.id;
+  if (opts.expectFrom !== undefined && t.status_key !== opts.expectFrom)
+    throw statusChanged(opts.expectFrom, t);
   assertVersion(t, opts.version);
   const sm = getStateMachine(t.project_id);
   const check = canTransition(sm, t.status_key, toStatus);

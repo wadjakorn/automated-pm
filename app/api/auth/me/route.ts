@@ -11,7 +11,7 @@ export function GET(req: NextRequest) {
   try {
     const u = currentUser(req);
     return NextResponse.json(
-      u ? { id: u.id, username: u.username, created_at: u.created_at } : null
+      u ? { id: u.id, username: u.username, kind: u.kind, created_at: u.created_at } : null
     );
   } catch (err) {
     return errorResponse(err);

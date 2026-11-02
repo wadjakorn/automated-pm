@@ -5,17 +5,17 @@ import { createSession, SESSION_COOKIE, sessionMaxAgeSeconds } from "@/lib/auth"
 
 export const dynamic = "force-dynamic";
 
-// POST { username, password } -> create account, start a browser session, and
+// POST { username, password, kind? } -> create account, start a browser session, and
 // return the public user plus the api_token (shown once, for CLI use).
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     if (!body.username || !body.password)
       throw badRequest("username and password are required");
-    const user = createUser(body.username, body.password);
+    const user = createUser(body.username, body.password, body.kind);
     const session = createSession(user.id);
     const res = NextResponse.json({
-      user: { id: user.id, username: user.username, created_at: user.created_at },
+      user: { id: user.id, username: user.username, kind: user.kind, created_at: user.created_at },
       api_token: user.api_token,
     });
     res.cookies.set(SESSION_COOKIE, session.id, {

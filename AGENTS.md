@@ -38,6 +38,8 @@ you cannot corrupt state by issuing a bad command — you get a JSON error inste
 | `not_found`           | 404  | Bad id. |
 | `illegal_transition`  | 422  | Move not allowed by the state machine. `message` says why. |
 | `conflict`            | 409  | Optimistic-lock failure. `current` holds the fresh row — re-read and retry with the new `version`. |
+| `status_changed`    | 409  | A `--from` claim lost: the ticket is no longer in that status. `current` holds the fresh row. |
+| `forbidden`         | 403  | Not allowed for this actor (e.g. an agent creating straight into `todo`). |
 | `unauthorized`        | 401  | Bad login credentials. |
 
 ## Auth (optional)
@@ -47,7 +49,7 @@ Auth is **additive** — every command works without logging in. Set
 create are attributed to you (`creator_id`). Get a token once:
 
 ```
-pm user create --username <u> --password <p>   # -> { user, api_token }
+pm user create --username <u> --password <p> [--kind human|agent]   # -> { user, api_token }
 pm login --username <u> --password <p>          # -> { api_token }
 pm whoami                                        # current user (needs PM_TOKEN) or null
 pm user list                                     # id + username for --assignee
@@ -77,7 +79,7 @@ pm transition remove --project <id|name> --from <key> --to <key>
 pm task create --project <id|name> --title <title> [--description <text>] [--status <key>] [--assignee <id|username>] [--priority <low|medium|high|now>]
 pm task list --project <id|name> [--status <key>] [--include-deleted] [--include-archived] [--assignee <id|username>] [--priority <low|medium|high|now>]
 # every --id below takes the nanoid OR the human ticket key (e.g. PM-0002)
-pm task move --id <id|key> --status <key> [--version <n>]
+pm task move --id <id|key> --status <key> [--from <key>] [--version <n>]   # --from = claim
 pm task update --id <id|key> [--title <t>] [--description <text>] [--version <n>] [--assignee <id|username> | --unassign] [--priority <low|medium|high|now>]
 pm task delete --id <id|key>          # soft delete (recoverable)
 pm task restore --id <id|key>
@@ -126,6 +128,16 @@ user. Creator is set from `PM_TOKEN` (the authenticated caller), not a flag.
   have been customized. Run `pm status list --project <id>` and read the returned
   `statuses` (each has `is_final`) and `transitions` (`from_key`→`to_key`) instead
   of assuming the defaults.
+- **Claim with `--from`.** To take a ready ticket, move it with
+  `pm task move --id <id> --status doing --from todo`. The move only succeeds if
+  the ticket is still in `todo`; if someone else moved it first you get
+  `409 status_changed` (with `current`) — leave it and pick another. Without
+  `--from`, moving to the status a ticket is already in is a harmless no-op.
+- **Agents can't approve work.** Users have a `kind` (`human` or `agent`). An
+  agent (or anonymous caller) creating a ticket directly in `todo` gets
+  `403 forbidden` — `todo` is the owner's accept gate. Create it in `backlog`
+  and let a human move it. Kind is set on the host only:
+  `npm run db -- user-kind <user> <human|agent>`.
 - **Optimistic locking.** `--version` is optional. If omitted, the CLI reads the
   current version and writes (convenient, last-writer-wins). If you pass
   `--version` and it's stale, you get `conflict` with the current row — reconcile
