@@ -107,12 +107,14 @@ projects, so `--project "Website"` works anywhere an id does (quote names with
 spaces). Creating or renaming a project to a name already in use returns a
 `bad_request`.
 
-**Login is optional.** Without `PM_TOKEN` (or a browser session) everything
-still works — tasks just have a `null` creator/assignee. Create an account with
-`pm user create` (or the `/register` page in the browser), then set
-`PM_TOKEN=<api_token>` so the CLI attributes new tasks to you. `--assignee`
-takes a user id or username. Browser sessions use an httpOnly cookie (30 days);
-the CLI token does not expire.
+**Auth.** Reads never need a login. Writes need a browser session or
+`PM_TOKEN` when the server runs with `PM_AUTH_MODE=write-token` (set in
+`docker-compose.yml`); with the default `open` mode anonymous writes still
+work. An unknown `PM_TOKEN` is always rejected with `401`. Create an account
+with `pm user create` (in write-token mode an existing user must do this), then
+set `PM_TOKEN=<api_token>`. The token doesn't expire; `pm token rotate`
+replaces it. `--assignee` takes a user id or username. Browser sessions use an
+httpOnly cookie (30 days).
 
 Without `npm link`, the same commands work via `npm run cli -- <args>`.
 

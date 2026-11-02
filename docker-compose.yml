@@ -9,4 +9,6 @@ services:
     environment:
       - NODE_ENV=production
       - PM_DB_PATH=/app/data/pm.db
+      # Writes need a session or PM_TOKEN; reads stay open (see lib/actor.ts).
+      - PM_AUTH_MODE=write-token
     restart: unless-stopped

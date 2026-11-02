@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handle } from "@/lib/api-errors";
-import { currentUser } from "@/lib/auth";
+import { NextRequest } from "next/server";
+import { unauthorized } from "@/lib/api-errors";
 import { listReadyTickets } from "@/lib/repo";
+import { handleRead } from "@/lib/actor";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +10,8 @@ export const dynamic = "force-dynamic";
 // bearing) projects, repo URL joined. STRICTER than the open board — it gates
 // autonomous code execution, so it requires a valid PM_TOKEN (or session).
 export function GET(req: NextRequest) {
-  if (!currentUser(req)) {
-    return NextResponse.json(
-      { error: "unauthorized", message: "a valid PM_TOKEN is required for /ready" },
-      { status: 401 }
-    );
-  }
-  return handle(() => {
+  return handleRead(req, (me) => {
+    if (!me) throw unauthorized("a valid PM_TOKEN is required for /ready");
     const sp = new URL(req.url).searchParams;
     return listReadyTickets({
       projectRef: sp.get("project") ?? undefined,

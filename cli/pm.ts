@@ -111,10 +111,11 @@ const proj = (f: Flags): string => encodeURIComponent(need(f, "project"));
 
 const HELP = `pm — Project Manager CLI
 
-  # Auth is OPTIONAL. Set PM_TOKEN=<api_token> to attribute created tasks to you.
+  # Set PM_TOKEN=<api_token>. Reads never need it; writes do on a write-token server.
   pm user create --username <u> --password <p> [--kind human|agent]   # -> { user, api_token }
   pm user list
-  pm login --username <u> --password <p>          # -> { api_token }; export PM_TOKEN
+  pm login --username <u> --password <p>          # check credentials (-> { user }); does NOT return a token
+  pm token rotate --username <u> --password <p>   # -> { api_token } new token, old one stops working; export PM_TOKEN
   pm whoami                                        # current user (needs PM_TOKEN) or null
 
   pm project create --name <name> [--description <text>]
@@ -271,6 +272,14 @@ async function main() {
           username: need(f, "username"),
           password: need(f, "password"),
           kind: typeof f.kind === "string" ? f.kind : undefined,
+        })
+      );
+    case "token rotate":
+      return emit(
+        "raw",
+        await api("POST", "/api/auth/token", {
+          username: need(f, "username"),
+          password: need(f, "password"),
         })
       );
     case "user list":

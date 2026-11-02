@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
-import { handle, badRequest } from "@/lib/api-errors";
+import { badRequest } from "@/lib/api-errors";
 import { createTask, listTasks } from "@/lib/repo";
-import { currentUser } from "@/lib/auth";
+import { handleRead, handleWrite } from "@/lib/actor";
 
 export const dynamic = "force-dynamic";
 
 // GET ?project=&status=&includeDeleted=&assignee=&priority=
 export function GET(req: NextRequest) {
-  return handle(() => {
+  return handleRead(req, () => {
     const sp = new URL(req.url).searchParams;
     const project = sp.get("project");
     if (!project) throw badRequest("project query param is required");
@@ -25,10 +25,9 @@ export function GET(req: NextRequest) {
 // creator_id is taken from the authenticated caller (nullable when anonymous).
 // Only a human caller may create straight into the ready status.
 export function POST(req: NextRequest) {
-  return handle(async () => {
+  return handleWrite(req, async (me) => {
     const body = await req.json();
     if (!body.project) throw badRequest("project is required");
-    const me = currentUser(req);
     return createTask(body.project, {
       ...body,
       creatorId: me?.id ?? null,

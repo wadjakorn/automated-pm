@@ -71,7 +71,7 @@ Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
 | `conflict`           | 409  | Optimistic-lock failure. `current` holds the fresh row — re-read, then retry with the new `version`. |
 | `status_changed`    | 409  | A `--from` claim lost: the ticket is no longer in that status. `current` holds the fresh row. |
 | `forbidden`         | 403  | Not allowed for this actor (e.g. an agent creating straight into `todo`). |
-| `unauthorized`       | 401  | Bad login credentials (`pm login` with a wrong password). |
+| `unauthorized`       | 401  | Bad credentials, an unknown `PM_TOKEN`, or an anonymous write on a write-token server. |
 
 - **Output is TTY-aware.** A pipe/redirect (non-TTY) prints **JSON** — so the
   `jq`/`sed` recipes below are unchanged. An interactive terminal prints pretty
@@ -91,16 +91,17 @@ Exit 0 with a JSON array (possibly empty) → server is up and CLI works.
 projects). `--project 'My Site'` and `--project qgYkAVRhbeVh` are equivalent —
 the server resolves either, id first. Quote names with spaces.
 
-**Auth is OPTIONAL/ADDITIVE.** Every command works anonymously. Set
-`PM_TOKEN=<api_token>` to attribute created tasks to a user (`creator_id`).
-`--assignee` takes a user id OR username. Anonymous tasks have `null`
-creator/assignee — that is normal, not an error.
+**Auth.** Set `PM_TOKEN=<api_token>`. Reads always work anonymously; writes
+need a token when the server runs `PM_AUTH_MODE=write-token` (the local docker
+instance does). An unknown token is always `401` — never a silent anonymous
+fallback. `--assignee` takes a user id OR username.
 
 ```
 # auth (optional)
 pm user create --username <u> --password <p> [--kind human|agent]   # -> { user, api_token }
 pm user list
-pm login --username <u> --password <p>          # -> { api_token }; export PM_TOKEN
+pm token rotate --username <u> --password <p>   # -> { api_token } new token, old one dies; export PM_TOKEN
+pm login --username <u> --password <p>          # checks credentials -> { user }; does NOT return a token
 pm whoami                                        # current user (needs PM_TOKEN) or null
 
 pm project create --name <name> [--description <text>]   # name must be unique
@@ -207,11 +208,10 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
   projects, so you can address one by name (`--project 'My Site'`) instead of
   copying its id. Creating/renaming to a name already taken returns
   `bad_request`. A name frees up once its project is trashed.
-- **Auth is optional; identity is attribution only.** No command requires a
-  login. With `PM_TOKEN` set, new tasks get `creator_id` = that user. `--assignee
-  <id|username>` must name an existing user (else `not_found`); `--unassign`
-  clears it. There are no roles — auth never grants or denies access, it only
-  records who created/owns a task. User deletion is not implemented yet.
+- **Identity.** With `PM_TOKEN` set, new tasks get `creator_id` = that user and
+  agent rules apply to agent users. On a write-token server every write needs a
+  token. `--assignee <id|username>` must name an existing user (else
+  `not_found`); `--unassign` clears it. There are no roles beyond human/agent.
 - **Always set an assignee.** Every task you create or pick up should name an
   owner — pass `--assignee <id|username>` on `pm task create`, or `pm task
   update --id <id> --assignee <id|username>` for an existing one. Default to the

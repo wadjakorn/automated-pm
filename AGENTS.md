@@ -40,24 +40,30 @@ you cannot corrupt state by issuing a bad command — you get a JSON error inste
 | `conflict`            | 409  | Optimistic-lock failure. `current` holds the fresh row — re-read and retry with the new `version`. |
 | `status_changed`    | 409  | A `--from` claim lost: the ticket is no longer in that status. `current` holds the fresh row. |
 | `forbidden`         | 403  | Not allowed for this actor (e.g. an agent creating straight into `todo`). |
-| `unauthorized`        | 401  | Bad login credentials. |
+| `unauthorized`        | 401  | Bad credentials, an unknown `PM_TOKEN`, or an anonymous write on a write-token server. |
 
-## Auth (optional)
+## Auth
 
-Auth is **additive** — every command works without logging in. Set
-`PM_TOKEN=<api_token>` and the CLI sends it as a bearer token so tasks you
-create are attributed to you (`creator_id`). Get a token once:
+Set `PM_TOKEN=<api_token>`; the CLI sends it as a bearer token and the server
+records you as the actor (`creator_id`, agent rules).
+
+- **Reads** always work without a token.
+- **Writes** need a token when the server runs `PM_AUTH_MODE=write-token`
+  (the local docker instance does). Otherwise they also work anonymously.
+- **A wrong token is an error**, never a silent fallback: any request with an
+  unknown `PM_TOKEN` gets `401 unauthorized`.
 
 ```
-pm user create --username <u> --password <p> [--kind human|agent]   # -> { user, api_token }
-pm login --username <u> --password <p>          # -> { api_token }
+pm user create --username <u> --password <p> [--kind human|agent]   # -> { user, api_token } (shown once)
+pm token rotate --username <u> --password <p>   # -> { api_token } new token; the old one stops working
+pm login --username <u> --password <p>          # checks credentials -> { user }; does NOT return a token
 pm whoami                                        # current user (needs PM_TOKEN) or null
-pm user list                                     # id + username for --assignee
+pm user list                                     # id + username + kind for --assignee
 export PM_TOKEN=<api_token>
 ```
 
-Anonymous tasks (no `PM_TOKEN`) have `creator_id`/`assignee_id` = `null` —
-this is the default and fully supported.
+In write-token mode only an existing user can create accounts (`pm user
+create` with your `PM_TOKEN` set).
 
 ## Commands
 

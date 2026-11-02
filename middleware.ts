@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Full auth gate for the WEB UI: anonymous browser users are redirected to
 // /login for every app page. Only page navigations are gated — the JSON API
-// (/api/*) is intentionally left open so the CLI/agent Bearer-token flow
-// (PM_TOKEN) is unaffected (see ticket out-of-scope).
+// (/api/*) is not gated here: API auth (Bearer PM_TOKEN or this session
+// cookie, PM_AUTH_MODE=write-token) lives in lib/actor.ts, per route.
 //
 // This is a cheap cookie-PRESENCE check (middleware can't touch the SQLite
 // session store). A forged/expired cookie still fails at the session /

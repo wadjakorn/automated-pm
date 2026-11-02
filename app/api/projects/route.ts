@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server";
-import { handle } from "@/lib/api-errors";
 import { createProject, listProjects } from "@/lib/repo";
+import { handleRead, handleWrite } from "@/lib/actor";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/projects[?includeArchived=true&includeDeleted=true]. Default returns
 // the live sidebar list (hidden projects included; the sidebar filters them).
 export function GET(req: NextRequest) {
-  return handle(() => {
+  return handleRead(req, () => {
     const sp = new URL(req.url).searchParams;
     return listProjects({
       includeArchived: sp.get("includeArchived") === "true",
@@ -17,7 +17,7 @@ export function GET(req: NextRequest) {
 }
 
 export function POST(req: NextRequest) {
-  return handle(async () => {
+  return handleWrite(req, async () => {
     const body = await req.json();
     return createProject(body.name, body.description);
   });

@@ -196,6 +196,17 @@ export function verifyLogin(username: string, password: string): User {
   return u;
 }
 
+// Issue a new API token after re-checking the password. The old token stops
+// working immediately; the new one is returned once and never shown again.
+export function rotateApiToken(username: string, password: string): string {
+  const u = verifyLogin(username, password);
+  const token = newApiToken();
+  getDb()
+    .prepare("UPDATE users SET api_token=?, updated_at=? WHERE id=?")
+    .run(token, now(), u.id);
+  return token;
+}
+
 export function listUsers(): PublicUser[] {
   return (
     getDb().prepare("SELECT * FROM users ORDER BY username").all() as User[]

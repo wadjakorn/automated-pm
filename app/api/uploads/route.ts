@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { handle, badRequest } from "@/lib/api-errors";
-import { currentUser } from "@/lib/auth";
+import { badRequest } from "@/lib/api-errors";
 import { extForMime, saveUpload, MAX_UPLOAD_BYTES } from "@/lib/uploads";
+import { handleWrite } from "@/lib/actor";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // and returns { id, url, mime, size }. Anonymous allowed (attribution-only).
 // Compression happens client-side; this is the hard size/type gate.
 export function POST(req: NextRequest) {
-  return handle(async () => {
+  return handleWrite(req, async (me) => {
     const form = await req.formData().catch(() => null);
     const file = form?.get("file");
     if (!(file instanceof File)) throw badRequest("multipart field `file` is required");
@@ -25,7 +25,6 @@ export function POST(req: NextRequest) {
     const bytes = Buffer.from(await file.arrayBuffer());
     if (bytes.length === 0) throw badRequest("empty file");
 
-    const me = currentUser(req);
     const row = saveUpload(bytes, mime, file.name || null, me?.id ?? null);
     return { id: row.id, url: `/api/uploads/${row.id}`, mime: row.mime, size: row.size };
   });
