@@ -54,12 +54,18 @@ export default {
           from: { opacity: "0" },
           to: { opacity: "1" },
         },
+        // Mobile project sidebar slides in from the left edge.
+        "drawer-in-left": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
       },
       animation: {
         "toast-in": "toast-in 160ms ease-out",
         shimmer: "shimmer 1.4s infinite",
         "drawer-in": "drawer-in 200ms ease-out",
         "fade-in": "fade-in 150ms ease-out",
+        "drawer-in-left": "drawer-in-left 200ms ease-out",
       },
     },
   },
