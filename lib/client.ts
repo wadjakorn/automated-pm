@@ -1,6 +1,14 @@
 // Browser-side typed fetch helpers. Throw an ApiClientError carrying the
 // parsed JSON body so callers can branch on .code (e.g. conflict, illegal).
-import type { Project, Task, StateMachine, PublicUser, LinkedTicket } from "./types";
+import type {
+  Project,
+  Task,
+  StateMachine,
+  PublicUser,
+  LinkedTicket,
+  ActivityEntry,
+  InboxItem,
+} from "./types";
 
 export class ApiClientError extends Error {
   status: number;
@@ -57,6 +65,8 @@ export const api = {
       remote_repo_url?: string | null;
       // Status key new tasks default to; null/"" clears (→ first status).
       default_status_key?: string | null;
+      // Status agents treat as "ready to work"; null/"" clears (→ "todo").
+      ready_status_key?: string | null;
       // Per-project theme (web UI); null/"" clears (→ default pack/accent).
       theme_pack?: string | null;
       theme_accent?: string | null;
@@ -173,4 +183,36 @@ export const api = {
     req<LinkedTicket>("POST", `/api/tasks/${taskId}/links`, { targetRef, type }),
   removeLink: (taskId: string, linkId: string) =>
     req<{ ok: true }>("DELETE", `/api/tasks/${taskId}/links/${linkId}`),
+
+  // activity, comments, inbox
+  listActivity: (taskId: string, opts?: { since?: number; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (opts?.since) qs.set("since", String(opts.since));
+    if (opts?.limit) qs.set("limit", String(opts.limit));
+    const q = qs.toString();
+    return req<ActivityEntry[]>(
+      "GET",
+      `/api/tasks/${encodeURIComponent(taskId)}/activity${q ? `?${q}` : ""}`
+    );
+  },
+  addComment: (
+    taskId: string,
+    body: string,
+    kind?: "note" | "question" | "answer" | "handoff",
+    replyTo?: string | null
+  ) =>
+    req<ActivityEntry>("POST", `/api/tasks/${encodeURIComponent(taskId)}/comments`, {
+      body,
+      kind,
+      reply_to: replyTo ?? undefined,
+    }),
+  resolveComment: (commentId: string) =>
+    req<ActivityEntry>("POST", `/api/comments/${encodeURIComponent(commentId)}/resolve`),
+  listInbox: (opts?: { project?: string; assignee?: string }) => {
+    const qs = new URLSearchParams();
+    if (opts?.project) qs.set("project", opts.project);
+    if (opts?.assignee) qs.set("assignee", opts.assignee);
+    const q = qs.toString();
+    return req<InboxItem[]>("GET", `/api/inbox${q ? `?${q}` : ""}`);
+  },
 };

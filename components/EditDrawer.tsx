@@ -11,6 +11,7 @@ import { canUndoMove } from "./board-logic";
 import { compressImage, exceedsHardMax } from "@/lib/image-compress";
 import { PriorityIcon } from "./PriorityIcon";
 import { Markdown } from "./Markdown";
+import { ActivitySection } from "./ActivitySection";
 import { Spinner } from "./ui";
 import { toast } from "./Toast";
 
@@ -26,10 +27,14 @@ export function EditDrawer({
   onChanged,
   onTaskUpdated,
   onOpenTask,
+  tasks,
 }: {
   task: Task;
   sm: StateMachine;
   users: PublicUser[];
+  // Loaded tickets of the current project, used to show link events in the
+  // timeline by ticket key instead of the raw id. Optional.
+  tasks?: Task[];
   onClose: () => void;
   onChanged: () => void;
   // Hand the server's fresh copy of the ticket back to the owner (new status
@@ -57,6 +62,8 @@ export function EditDrawer({
   // Accessible discard prompt replaces window.confirm() so it's keyboard- and
   // screen-reader-friendly and themed.
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // An unsent comment draft in the Activity composer also counts as unsaved.
+  const [commentDirty, setCommentDirty] = useState(false);
 
   // A different ticket resets every field. The same ticket at a new version
   // (e.g. after a status move) only adopts the fresh saved value for fields
@@ -85,16 +92,18 @@ export function EditDrawer({
     description !== (task.description ?? "") ||
     assignee !== (task.assignee_id ?? "") ||
     priority !== task.priority;
+  const fieldsDirty = dirty;
+  const anyDirty = fieldsDirty || commentDirty;
 
   // Confirm before discarding unsaved edits. A clean drawer closes instantly;
   // a dirty one raises an in-drawer accessible confirm dialog.
   const requestClose = useCallback(() => {
-    if (dirty) {
+    if (anyDirty) {
       setConfirmDiscard(true);
       return;
     }
     onClose();
-  }, [dirty, onClose]);
+  }, [anyDirty, onClose]);
 
   // Focus the panel once on mount so keyboard users land inside it. Kept in its
   // own mount-only effect: folding it into the keydown effect below re-ran
@@ -192,6 +201,10 @@ export function EditDrawer({
   }
 
   const targets = allowedTargets(sm, task.status_key);
+  const ticketRefFor = useCallback(
+    (id: string) => tasks?.find((t) => t.id === id)?.ticket_key ?? id,
+    [tasks]
+  );
   const statusLabel = (k: string) =>
     sm.statuses.find((s) => s.key === k)?.label ?? k;
 
@@ -210,7 +223,7 @@ export function EditDrawer({
 
   const save = () =>
     withBusy(async () => {
-      await api.updateTask(
+      const saved = await api.updateTask(
         task.id,
         {
           title: title.trim(),
@@ -222,7 +235,10 @@ export function EditDrawer({
       );
       toast("Saved", "success");
       onChanged();
-      onClose();
+      // Keep the drawer open while a comment draft is pending so Save never
+      // silently drops it; adopt the saved copy so the fields read clean.
+      if (commentDirty) onTaskUpdated?.(saved);
+      else onClose();
     });
 
   // Move without closing: the returned ticket (new status + version) replaces
@@ -471,6 +487,14 @@ export function EditDrawer({
         </div>
 
         <LinksSection task={task} onOpenTask={onOpenTask} />
+
+        <ActivitySection
+          key={task.id}
+          task={task}
+          sm={sm}
+          ticketRef={ticketRefFor}
+          onDraftDirty={setCommentDirty}
+        />
         </div>
 
         <div className="shrink-0 border-t border-border px-5 py-4">
@@ -515,7 +539,11 @@ export function EditDrawer({
                 Discard unsaved changes?
               </h3>
               <p className="mt-1 text-sm text-fg-muted">
-                Your edits to this ticket will be lost.
+                {fieldsDirty && commentDirty
+                  ? "Your edits and unsent comment will be lost."
+                  : commentDirty
+                    ? "Your unsent comment will be lost."
+                    : "Your edits to this ticket will be lost."}
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button

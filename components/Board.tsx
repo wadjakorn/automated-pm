@@ -420,6 +420,7 @@ export function Board() {
           task={editing}
           sm={sm}
           users={users}
+          tasks={tasks}
           onClose={closeTask}
           onChanged={() => selectedId && loadTasks(selectedId)}
           // Only refresh the drawer if it still shows this ticket (an Undo can
