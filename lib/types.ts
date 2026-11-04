@@ -146,6 +146,7 @@ export interface LinkedTicket {
   label: string;
   task: {
     id: string;
+    ticket_key: string | null;
     title: string;
     status_key: string;
     project_id: string;

@@ -6,10 +6,12 @@
 // machine, users, tokens) stay in the CLI/web.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { ApiError, unauthorized } from "./api-errors";
+import { ApiError, badRequest, notFound, unauthorized } from "./api-errors";
+import { getDb } from "./db";
 import { authMode } from "./actor";
 import {
   addComment,
+  createLink,
   createTask,
   getProject,
   getStateMachine,
@@ -22,14 +24,47 @@ import {
   listTasks,
   moveTask,
   overview,
+  removeLink,
   searchTasks,
   updateTask,
 } from "./repo";
 import { allowedTargets } from "./statemachine";
-import { summarizeTask } from "./task-view";
+import { compactTask } from "./task-view";
+import { LINK_OPTIONS, type LinkOption } from "./ticket-link";
 import type { User } from "./types";
 
 const PRIORITY = z.enum(["low", "medium", "high", "now"]);
+const LINK_TYPE = z
+  .enum(LINK_OPTIONS.map((o) => o.value) as [LinkOption, ...LinkOption[]])
+  .describe("blocks | blocked-by | causes | caused-by | relates (from this ticket's side)");
+
+// pm_list_tasks paging. A project can hold hundreds of tickets with 30k-char
+// descriptions; a client that gets more than it can read silently drops the
+// result, so the server caps the page and says so instead.
+export const LIST_DEFAULT_LIMIT = 50;
+export const LIST_MAX_LIMIT = 200;
+export const LIST_MAX_CHARS = 40_000;
+
+const parseCursor = (cursor: string | undefined): number => {
+  if (cursor == null || cursor === "") return 0;
+  if (!/^\d+$/.test(cursor)) throw badRequest("cursor must be a next_cursor value from a previous page");
+  return Number(cursor);
+};
+
+// One page of rows, shrunk until its JSON fits LIST_MAX_CHARS. Always keeps at
+// least one row so paging can make progress; a lone oversized full row has its
+// description cut.
+function fitPage<T extends { description?: string | null }>(rows: T[]): { rows: T[]; cut: boolean } {
+  const size = (r: T[]) => JSON.stringify(r, null, 1).length;
+  if (size(rows) <= LIST_MAX_CHARS) return { rows, cut: false };
+  const out = rows.slice();
+  while (out.length > 1 && size(out) > LIST_MAX_CHARS) out.pop();
+  if (out.length === 1 && size(out) > LIST_MAX_CHARS && typeof out[0].description === "string") {
+    const keep = Math.max(0, out[0].description.length - (size(out) - LIST_MAX_CHARS) - 100);
+    out[0] = { ...out[0], description: out[0].description.slice(0, keep) + "…" };
+  }
+  return { rows: out, cut: true };
+}
 
 // Ticket text is written by people and other agents. Said once per tool that
 // returns it, so a model reads descriptions as data, not as instructions.
@@ -166,22 +201,61 @@ export function buildMcpServer(actor: User | null): McpServer {
     {
       title: "List tickets",
       description:
-        "Tickets in a project, sorted by status then priority. Descriptions are trimmed to an excerpt " +
-        "(has_more_description) unless view='full'; use pm_get_task for one ticket in full. " +
+        "One page of a project's tickets, sorted by status then priority. By default only OPEN tickets " +
+        "(not in a final status, not archived); open_only=false includes finished and archived ones, and an " +
+        "explicit status always wins. q filters by title substring (e.g. an epic tag like '[AAUX2]'). " +
+        `Returns { total, count, tasks, next_cursor }: pass next_cursor back as cursor for the next page ` +
+        `(null = last page). limit defaults to ${LIST_DEFAULT_LIMIT}, max ${LIST_MAX_LIMIT}. Rows are compact ` +
+        "(key, title, status, priority, assignee, updated_at, excerpt) unless view='full'; use pm_get_task " +
+        `for one ticket in full. A page over ~${LIST_MAX_CHARS / 1000}k chars is cut short with truncated=true. ` +
         UNTRUSTED,
       inputSchema: {
         project: z.string().describe("Project id or name"),
-        status: z.string().optional().describe("Only this status key"),
+        status: z.string().optional().describe("Only this status key (overrides open_only)"),
         assignee: z.string().optional().describe("Only this assignee (id or username)"),
         priority: PRIORITY.optional(),
-        view: z.enum(["summary", "full"]).optional().describe("Default summary"),
+        q: z.string().optional().describe("Title contains this text (case-insensitive)"),
+        open_only: z
+          .boolean()
+          .optional()
+          .describe("Default true: hide final-status and archived tickets"),
+        limit: z.number().int().min(1).max(LIST_MAX_LIMIT).optional().describe(`Default ${LIST_DEFAULT_LIMIT}`),
+        cursor: z.string().optional().describe("next_cursor from the previous page"),
+        view: z.enum(["summary", "full"]).optional().describe("Default summary (compact rows)"),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ project, status, assignee, priority, view }) =>
+    async ({ project, status, assignee, priority, q, open_only, limit, cursor, view }) =>
       run(() => {
-        const tasks = listTasks(project, { status, assignee, priority });
-        return view === "full" ? tasks : tasks.map((t) => summarizeTask(t));
+        const openOnly = open_only ?? true;
+        const offset = parseCursor(cursor);
+        const size = limit ?? LIST_DEFAULT_LIMIT;
+        const all = listTasks(project, {
+          status,
+          assignee,
+          priority,
+          titleContains: q,
+          excludeFinal: openOnly && !status,
+          includeArchived: !openOnly,
+        });
+        const slice = all.slice(offset, offset + size);
+        const rows = view === "full" ? slice : slice.map((t) => compactTask(t));
+        const { rows: page, cut } = fitPage<any>(rows);
+        const end = offset + page.length;
+        return {
+          total: all.length,
+          count: page.length,
+          tasks: page,
+          next_cursor: end < all.length ? String(end) : null,
+          ...(cut
+            ? {
+                truncated: true,
+                hint:
+                  "Page cut to fit the response size. Continue with next_cursor, lower limit, " +
+                  "use view='summary', or narrow with status / assignee / q.",
+              }
+            : {}),
+        };
       })
   );
 
@@ -239,17 +313,25 @@ export function buildMcpServer(actor: User | null): McpServer {
         status: z.string().optional(),
         assignee: z.string().optional().describe("User id or username (set one)"),
         priority: PRIORITY.optional().describe("Default medium (set one)"),
+        links: z
+          .array(z.object({ target: z.string().describe("Ticket id, key or URL"), type: LINK_TYPE }))
+          .optional()
+          .describe("Link the new ticket on creation, e.g. [{target:'TP-0138', type:'relates'}] to an epic"),
       },
     },
-    async (args) =>
+    async ({ links, ...args }) =>
       write(() =>
-        withNext(
-          createTask(args.project, {
+        // All-or-nothing: a bad link target rolls the new ticket back too.
+        getDb().transaction(() => {
+          const task = createTask(args.project, {
             ...args,
             creatorId: actor?.id ?? null,
             actorKind: actor?.kind ?? null,
-          })
-        )
+          });
+          const ctx = { actorId: actor?.id ?? null };
+          const made = (links ?? []).map((l) => createLink(task.id, l.target, l.type, ctx));
+          return { ...withNext(task), links: made };
+        })()
       )
   );
 
@@ -289,6 +371,46 @@ export function buildMcpServer(actor: User | null): McpServer {
     },
     async ({ id, status, from, version }) =>
       write(() => withNext(moveTask(id, status, { expectFrom: from, version })))
+  );
+
+  server.registerTool(
+    "pm_link_tasks",
+    {
+      title: "Link tickets",
+      description:
+        "Link this ticket to another one (any project). The link shows on BOTH tickets with the inverse label " +
+        "(A blocks B = B blocked-by A). An open 'blocks' link keeps the blocked ticket out of ready work. " +
+        "Linking the same pair twice is bad_request. Returns the link as seen from this ticket (link_id for unlinking).",
+      inputSchema: {
+        id: z.string().describe("This ticket: id or key"),
+        target: z.string().describe("Other ticket: id, key (e.g. TP-0138) or share URL"),
+        type: LINK_TYPE,
+      },
+    },
+    async ({ id, target, type }) =>
+      write(() => createLink(id, target, type, { actorId: actor?.id ?? null }))
+  );
+
+  server.registerTool(
+    "pm_unlink_tasks",
+    {
+      title: "Unlink tickets",
+      description:
+        "Remove a link from this ticket (both sides lose it). link_id comes from pm_get_task links[] or pm_link_tasks.",
+      inputSchema: {
+        id: z.string().describe("Ticket id or key the link is on"),
+        link_id: z.string().describe("links[].link_id"),
+      },
+      annotations: { destructiveHint: true },
+    },
+    async ({ id, link_id }) =>
+      write(() => {
+        // Only a link on this ticket: a stray link_id must not cut someone else's link.
+        const taskId = getTask(id, true).id;
+        const link = listLinksFor(taskId).find((l) => l.link_id === link_id);
+        if (!link) throw notFound(`link ${link_id} on this ticket`);
+        return removeLink(link_id, { actorId: actor?.id ?? null, viewerId: taskId });
+      })
   );
 
   server.registerTool(
