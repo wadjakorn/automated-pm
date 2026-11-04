@@ -45,6 +45,11 @@ const HINTS: Record<string, string> = {
   unauthorized: "This server needs a valid PM_TOKEN for writes.",
 };
 
+const HUMAN_TOKEN_WARNING =
+  "This MCP connection uses a human user's token, so agent rules (no creating straight into todo, " +
+  "the human-accept ready gate) do not apply to it. MCP clients are agents: give this client its own " +
+  "agent user's token (host: npm run db -- user-kind <user> agent; npm run db -- user-token <user>).";
+
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
 const ok = (data: unknown): ToolResult => ({
@@ -98,10 +103,25 @@ export function buildMcpServer(actor: User | null): McpServer {
     "pm_whoami",
     {
       title: "Who am I",
-      description: "The user this connection acts as (username, kind human|agent), or null when anonymous.",
+      description:
+        "The user this connection acts as (username, kind human|agent), or null when anonymous. " +
+        "Carries a warning when the token belongs to a human user.",
       annotations: { readOnlyHint: true },
     },
-    async () => ok(actor ? { id: actor.id, username: actor.username, kind: actor.kind } : null)
+    async () =>
+      ok(
+        actor
+          ? {
+              id: actor.id,
+              username: actor.username,
+              kind: actor.kind,
+              // MCP clients are agents. A human token here is almost always a
+              // shared env var (PM_TOKEN) picked up by the wrong client — and it
+              // silently lifts the agent rules (todo accept gate, ready gate).
+              ...(actor.kind === "human" ? { warning: HUMAN_TOKEN_WARNING } : {}),
+            }
+          : null
+      )
   );
 
   server.registerTool(

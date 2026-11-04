@@ -201,7 +201,8 @@ pm status update --project <id|name> --key <key> [--label <l>] [--final <true|fa
   agent (or anonymous caller) creating a ticket directly in `todo` gets
   `403 forbidden` — `todo` is the owner's accept gate. Create it in `backlog`
   and let a human move it. Kind is set on the host only:
-  `npm run db -- user-kind <user> <human|agent>`.
+  `npm run db -- user-kind <user> <human|agent>`; issue an agent user a token
+  without its password with `npm run db -- user-token <user>`.
 - **Talk through comments.** Progress goes in `pm comment` (kind `note`),
   never by rewriting the description — the description is the spec. When you
   need a human decision, post a `question` and move the ticket to `blocked`;
@@ -264,9 +265,17 @@ with `next_statuses` and links), `pm_create_task`, `pm_update_task`,
 includes the ticket's last 50 history entries. Errors come back as `{error, message, hint}`.
 Admin actions (delete project, state machine, users, tokens) are CLI/web only.
 
+**One agent user per client.** Give each MCP client its own `kind=agent`
+user and token, in its own env var. If clients share one `PM_TOKEN`, every one
+of them acts as the same user. If that user is human, the agent rules (todo
+accept gate, ready gate) don't apply to them. `pm_whoami` returns a `warning`
+when the connection's user is human. To set it up, on the host:
+
 ```bash
+npm run db -- user-kind Claude agent          # mark the client's user as an agent
+npm run db -- user-token Claude               # new token on stdout, no password needed (old one stops)
 # Claude Code (the token stays an env reference, not a literal)
-claude mcp add -s user -t http pm http://localhost:3000/api/mcp -H 'Authorization: Bearer ${PM_TOKEN}'
+claude mcp add -s user -t http pm http://localhost:3000/api/mcp -H 'Authorization: Bearer ${PM_TOKEN_CLAUDE}'
 # Codex
 codex mcp add pm --url http://localhost:3000/api/mcp --bearer-token-env-var PM_TOKEN
 ```

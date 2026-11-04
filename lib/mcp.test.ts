@@ -52,6 +52,20 @@ describe("MCP server", () => {
     ]);
   });
 
+  it("pm_whoami warns when the connection uses a human token, not for an agent", async () => {
+    const human = repo.createUser("mcp-whoami-human", "pw");
+    const h = await (await connect(human)).call("pm_whoami");
+    expect(h.data).toMatchObject({ username: "mcp-whoami-human", kind: "human" });
+    expect(h.data.warning).toMatch(/human user's token/);
+
+    const agent = repo.createUser("mcp-whoami-agent", "pw", "agent");
+    const a = await (await connect(agent)).call("pm_whoami");
+    expect(a.data).toMatchObject({ username: "mcp-whoami-agent", kind: "agent" });
+    expect(a.data).not.toHaveProperty("warning");
+
+    expect((await (await connect(null)).call("pm_whoami")).data).toBeNull();
+  });
+
   it("creates, reads, claims and reports next statuses for a human", async () => {
     const human = repo.createUser("mcp-human", "pw");
     const { call } = await connect(human);
