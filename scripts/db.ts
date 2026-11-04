@@ -13,6 +13,7 @@
  *   tsx scripts/db.ts restore --in <file> [--yes]    # replaces live DB + uploads (snapshots first)
  *   tsx scripts/db.ts info                           # show DB path + row counts
  *   tsx scripts/db.ts user-kind <user> <human|agent> # mark a user as human/agent (admin)
+ *   tsx scripts/db.ts user-token <user>              # issue a new API token, no password (admin)
  *
  * Why a binary .db copy: SQLite's file format is architecture-independent, so a
  * backup taken on macOS restores cleanly on any other machine, ARM included. The
@@ -24,6 +25,7 @@
  * (legacy/back-compat) — detected by gzip magic bytes, not the extension.
  */
 import Database from "better-sqlite3";
+import { newApiToken } from "../lib/auth";
 import {
   copyFileSync,
   cpSync,
@@ -398,6 +400,28 @@ function cmdUserKind(args: string[]) {
   }
 }
 
+// Issue a new API token for a user without their password — for agent users
+// whose password nobody keeps. Host-only like user-kind: whoever can run this
+// already owns the DB file. The old token stops working; the new one is
+// printed once on stdout (nothing else is) so it can be piped into a file.
+function cmdUserToken(args: string[]) {
+  const [ref] = args.filter((a) => !a.startsWith("--"));
+  if (!ref) die("usage: tsx scripts/db.ts user-token <username|id>");
+  if (!existsSync(DB_PATH)) die(`live DB not found at ${DB_PATH} (set PM_DB_PATH?)`);
+  const db = new Database(DB_PATH);
+  try {
+    const token = newApiToken();
+    const r = db
+      .prepare("UPDATE users SET api_token=?, updated_at=? WHERE id=? OR username=?")
+      .run(token, new Date().toISOString(), ref, ref);
+    if (r.changes === 0) die(`user "${ref}" not found`);
+    process.stderr.write(`${ref}: new API token issued (the old one no longer works)\n`);
+    ok(token);
+  } finally {
+    db.close();
+  }
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const f = parseFlags(rest);
@@ -410,13 +434,16 @@ async function main() {
       return cmdInfo();
     case "user-kind":
       return cmdUserKind(rest);
+    case "user-token":
+      return cmdUserToken(rest);
     default:
       process.stdout.write(
         `db — export / restore the SQLite database (includes users) + image uploads\n\n` +
           `  tsx scripts/db.ts export  [--out <file>] [--db-only]\n` +
           `  tsx scripts/db.ts restore --in <file> [--yes]\n` +
           `  tsx scripts/db.ts info\n` +
-          `  tsx scripts/db.ts user-kind <user> <human|agent>\n\n` +
+          `  tsx scripts/db.ts user-kind <user> <human|agent>\n` +
+          `  tsx scripts/db.ts user-token <user>\n\n` +
           `DB path : ${DB_PATH} (override with PM_DB_PATH)\n` +
           `Uploads : ${UPLOADS_DIR}\n`
       );
