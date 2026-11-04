@@ -212,11 +212,28 @@ none is a `cli_error`; an unknown command returns `did_you_mean`.
 The server also speaks MCP at `http://localhost:3000/api/mcp` (Streamable HTTP,
 stateless, same `PM_TOKEN` as the CLI). Same rules as the API — it calls the
 same code. Tools: `pm_whoami`, `pm_list_projects`, `pm_get_workflow`,
-`pm_list_tasks` (summary by default), `pm_list_ready`, `pm_get_task` (full,
-with `next_statuses` and links), `pm_create_task`, `pm_update_task`,
-`pm_move_task` (`from` = claim), `pm_comment`, `pm_list_inbox`,
-`pm_search_tasks`, `pm_my_work`. `pm_get_task`
-includes the ticket's last 50 history entries. Errors come back as `{error, message, hint}`.
+`pm_list_tasks` (paged, open tickets only by default — see below),
+`pm_list_ready`, `pm_get_task` (full, with `next_statuses` and links),
+`pm_create_task` (optional `links: [{target, type}]`), `pm_update_task`,
+`pm_move_task` (`from` = claim), `pm_link_tasks`, `pm_unlink_tasks`,
+`pm_comment`, `pm_list_inbox`, `pm_search_tasks`, `pm_my_work`. `pm_get_task`
+includes the ticket's last 50 history entries.
+
+- **`pm_list_tasks` pages.** Returns `{ total, count, tasks, next_cursor }`;
+  pass `next_cursor` back as `cursor` until it is `null`. `limit` defaults to
+  50 (max 200). `open_only` defaults to `true` (hides final-status and archived
+  tickets; an explicit `status` wins). `q` filters by title substring — handy
+  for an epic tag like `[AAUX2]`. Rows are compact (`id, ticket_key, title,
+  status_key, priority, assignee_username, updated_at, excerpt`) unless
+  `view: "full"`. A page over ~40k chars is cut short with `truncated: true` —
+  continue with `next_cursor` or narrow the filter.
+- **Links.** `pm_link_tasks({ id, target, type })` — `target` is an id, key
+  or share URL in any project; `type` is `blocks | blocked-by | causes |
+  caused-by | relates`; a duplicate pair is `bad_request`. Both tickets show it.
+  `pm_unlink_tasks({ id, link_id })` removes it (`link_id` from
+  `pm_get_task` `links[]`). To file children under an epic in one call:
+  `pm_create_task({ …, links: [{ target: "TP-0138", type: "relates" }] })`
+  (all-or-nothing: a bad target creates nothing). Errors come back as `{error, message, hint}`.
 Admin actions (delete project, state machine, users, tokens) are CLI/web only.
 
 **One agent user per client.** Give each MCP client its own `kind=agent`

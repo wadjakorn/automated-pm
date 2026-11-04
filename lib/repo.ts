@@ -631,6 +631,10 @@ export function listTasks(
     includeArchived?: boolean;
     assignee?: string;
     priority?: string;
+    // Drop tickets sitting in a final status (released, done…).
+    excludeFinal?: boolean;
+    // Case-insensitive substring of the title, e.g. an epic tag "[AAUX2]".
+    titleContains?: string;
   } = {}
 ): Task[] {
   projectId = getProject(projectId).id;
@@ -650,6 +654,16 @@ export function listTasks(
   if (opts.priority) {
     clauses.push("t.priority = ?");
     params.push(normPriority(opts.priority, DEFAULT_PRIORITY));
+  }
+  if (opts.excludeFinal) {
+    clauses.push(
+      "NOT EXISTS (SELECT 1 FROM statuses s WHERE s.project_id = t.project_id AND s.key = t.status_key AND s.is_final = 1)"
+    );
+  }
+  if (opts.titleContains?.trim()) {
+    // instr, not LIKE: no wildcard escaping for titles with % or _.
+    clauses.push("instr(lower(t.title), lower(?)) > 0");
+    params.push(opts.titleContains.trim());
   }
   // Within a status column tasks sort by priority (now→low), then rank.
   return (
@@ -1081,6 +1095,7 @@ function toLinkedTicket(row: any, viewerId: string): LinkedTicket {
     label: linkLabel(row.type, isSource),
     task: {
       id: other.id,
+      ticket_key: other.ticket_key ?? null,
       title: other.title,
       status_key: other.status_key,
       project_id: other.project_id,
