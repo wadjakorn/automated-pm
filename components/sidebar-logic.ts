@@ -65,3 +65,16 @@ export function neighbourAfterRemoval(shownIds: string[], removedId: string): st
 export function actionFailed(verb: string, name: string): string {
   return `Couldn't ${verb} "${name}". Try again.`;
 }
+
+// Whether project `id` is still in the shown list after its hidden flag
+// becomes `hidden`. Hiding a project while hidden projects are shown only
+// moves it into the hidden group; it must not move the selection away.
+export function stillShown(
+  projects: Project[],
+  id: string,
+  hidden: boolean,
+  showHidden: boolean
+): boolean {
+  const after = projects.map((p) => (p.id === id ? { ...p, hidden } : p));
+  return orderForDisplay(after, showHidden).some((p) => p.id === id);
+}

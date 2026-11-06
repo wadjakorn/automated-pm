@@ -9,6 +9,7 @@ import {
   moveVisible,
   neighbourAfterRemoval,
   orderForDisplay,
+  stillShown,
 } from "./sidebar-logic";
 
 // Collapsible left sidebar: the project switcher (a vertical list of buttons,
@@ -197,7 +198,9 @@ export function Sidebar({
     try {
       await api.updateProject(p.id, { hidden });
       setMenuFor(null);
-      const next = hidden ? selectAfter(p.id) : null;
+      // Only move the selection if the row actually leaves the list.
+      const next =
+        hidden && !stillShown(projects, p.id, true, showHidden) ? selectAfter(p.id) : null;
       onProjectsChanged();
       toast(
         hidden

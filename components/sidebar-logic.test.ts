@@ -5,6 +5,7 @@ import {
   moveVisible,
   neighbourAfterRemoval,
   orderForDisplay,
+  stillShown,
 } from "./sidebar-logic";
 
 function project(id: string, hidden = false): Project {
@@ -116,5 +117,18 @@ describe("neighbourAfterRemoval", () => {
 describe("actionFailed", () => {
   it("formats a readable sentence", () => {
     expect(actionFailed("hide", "capz")).toBe('Couldn\'t hide "capz". Try again.');
+  });
+});
+
+describe("stillShown", () => {
+  const list = [project("a"), project("b"), project("h1", true)];
+  it("a project hidden while the toggle is on stays in the list", () => {
+    expect(stillShown(list, "a", true, true)).toBe(true);
+  });
+  it("a project hidden while the toggle is off leaves the list", () => {
+    expect(stillShown(list, "a", true, false)).toBe(false);
+  });
+  it("an unhidden project is shown either way", () => {
+    expect(stillShown(list, "h1", false, false)).toBe(true);
   });
 });
