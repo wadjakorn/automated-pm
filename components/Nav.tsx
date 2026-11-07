@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { useAuth, useInboxCount } from "./useApp";
 import { toast } from "./Toast";
+import { Menu } from "./Menu";
 import { useTheme } from "./ThemeProvider";
 import { isAccentChoice, isThemePack, nextChoice } from "./theme";
 
@@ -36,6 +37,14 @@ export function Nav({
   live?: boolean;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  // Project menu (Settings / Appearance / Archive / Trash), a popover Menu.
+  const projectBtn = useRef<HTMLButtonElement>(null);
+  const [projectMenu, setProjectMenu] = useState(false);
+  const closeProjectMenu = useCallback((opts?: { restoreFocus?: boolean }) => {
+    setProjectMenu(false);
+    if (opts?.restoreFocus !== false) projectBtn.current?.focus();
+  }, []);
   const { user, refresh } = useAuth();
   // Open questions waiting on a human (agents asking). The badge is how the
   // owner notices from any page that someone is blocked on them.
@@ -89,22 +98,8 @@ export function Nav({
     pathname === "/archive" ||
     pathname === "/trash";
 
-  const projectLink = (href: string, label: string) => {
-    const active = pathname === href;
-    const q = selectedId ? `?project=${selectedId}` : "";
-    return (
-      <Link
-        href={href + q}
-        className={`block rounded px-3 py-2 text-sm ${
-          active
-            ? "bg-accent-soft text-accent"
-            : "text-fg-muted hover:bg-bg-soft hover:text-fg"
-        }`}
-      >
-        {label}
-      </Link>
-    );
-  };
+  const goProject = (href: string) =>
+    router.push(href + (selectedId ? `?project=${encodeURIComponent(selectedId)}` : ""));
 
   return (
     <header className="theme-nav flex items-center gap-2 whitespace-nowrap border-b border-border px-2 py-2 sm:gap-4 sm:px-5 sm:py-3">
@@ -208,23 +203,36 @@ export function Nav({
             </span>
           )}
         </Link>
-        <details className="group relative">
-          <summary
-            className={`list-none px-1.5 py-1.5 text-sm cursor-pointer sm:px-3 ${
-              projectMenuActive
-                ? "bg-accent-soft text-accent ring-1 ring-accent-border"
-                : "text-fg-muted hover:text-fg"
-            }`}
-          >
-            Project
-          </summary>
-          <div className="theme-panel absolute right-0 z-20 mt-2 min-w-40 border border-border bg-bg-card p-2">
-            {projectLink("/settings", "Settings")}
-            {projectLink("/appearance", "Appearance")}
-            {projectLink("/archive", "Archive")}
-            {projectLink("/trash", "Trash")}
-          </div>
-        </details>
+        <button
+          ref={projectBtn}
+          type="button"
+          onClick={() => (projectMenu ? closeProjectMenu() : setProjectMenu(true))}
+          aria-haspopup="menu"
+          aria-expanded={projectMenu}
+          aria-controls={projectMenu ? "project-menu" : undefined}
+          className={`px-1.5 py-1.5 text-sm sm:px-3 ${
+            projectMenuActive
+              ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+              : "text-fg-muted hover:text-fg"
+          }`}
+        >
+          Project <span aria-hidden="true">▾</span>
+        </button>
+        <Menu
+          id="project-menu"
+          label="Project"
+          open={projectMenu}
+          onClose={closeProjectMenu}
+          anchorRef={projectBtn}
+          align="end"
+          items={[
+            { kind: "item", label: "Settings", onSelect: () => goProject("/settings") },
+            { kind: "item", label: "Appearance", onSelect: () => goProject("/appearance") },
+            { kind: "separator" },
+            { kind: "item", label: "Archive", onSelect: () => goProject("/archive") },
+            { kind: "item", label: "Trash", onSelect: () => goProject("/trash") },
+          ]}
+        />
         <button
           onClick={() => setChoice(nextChoice(choice))}
           title={themeLabel}

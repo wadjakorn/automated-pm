@@ -78,3 +78,15 @@ export function stillShown(
   const after = projects.map((p) => (p.id === id ? { ...p, hidden } : p));
   return orderForDisplay(after, showHidden).some((p) => p.id === id);
 }
+
+// Which reorder moves are available for the row at `index` of its display
+// group of `length` rows (true = available). A row outside its group can't move.
+export function moveAvailability(
+  index: number,
+  length: number
+): { top: boolean; up: boolean; down: boolean; bottom: boolean } {
+  const inGroup = index >= 0 && index < length;
+  const up = inGroup && index > 0;
+  const down = inGroup && index < length - 1;
+  return { top: up, up, down, bottom: down };
+}
