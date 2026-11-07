@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { toast } from "./Toast";
+import {
+  actionFailed,
+  moveVisible,
+  neighbourAfterRemoval,
+  orderForDisplay,
+  stillShown,
+} from "./sidebar-logic";
 
 // Collapsible left sidebar: the project switcher (a vertical list of buttons,
 // the active one highlighted) plus the "+ New project" create flow — both moved
@@ -12,9 +19,12 @@ import { toast } from "./Toast";
 //
 // Each project row carries an overflow (⋯) menu that expands inline (accordion,
 // so it never clips inside the scrollable list) with reorder / hide / archive /
-// delete actions. Hidden projects drop out of the list behind a "Show hidden"
-// toggle; archived and deleted projects leave the list entirely (see the
-// Archive and Trash views).
+// delete actions. Hidden projects drop out of the list behind a persisted
+// "Show hidden projects" toggle and, when shown, are grouped AFTER the visible
+// ones (display order only — sort_order is untouched). Reorder moves a row
+// within its own group (visible or hidden) so a hidden neighbour never makes
+// ↑/↓ a silent no-op. Archived and deleted projects leave the list entirely
+// (see the Archive and Trash views); Hide / Archive / Trash toasts carry Undo.
 //
 // Below the `md` breakpoint the in-flow sidebar (rail or expanded) is not
 // rendered at all — it would eat most of a phone's width. Instead the same
@@ -23,6 +33,7 @@ import { toast } from "./Toast";
 // on project select, backdrop tap or Esc. The desktop open/closed preference
 // (SIDEBAR_KEY) is untouched by it.
 const SIDEBAR_KEY = "sidebar:open";
+const SHOW_HIDDEN_KEY = "sidebar:show-hidden";
 
 export function Sidebar({
   projects,
@@ -45,16 +56,25 @@ export function Sidebar({
   const [open, setOpen] = useState(true);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  // Which project's inline action menu is expanded (id), and whether hidden
-  // projects are revealed. Both are ephemeral UI state (not persisted).
+  // Which project's inline action menu is expanded (id) — ephemeral — and
+  // whether hidden projects are revealed, persisted like the open state.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
-    const stored =
-      typeof localStorage !== "undefined" ? localStorage.getItem(SIDEBAR_KEY) : null;
-    if (stored === "0") setOpen(false);
+    if (typeof localStorage === "undefined") return;
+    if (localStorage.getItem(SIDEBAR_KEY) === "0") setOpen(false);
+    if (localStorage.getItem(SHOW_HIDDEN_KEY) === "1") setShowHidden(true);
   }, []);
+
+  const toggleShowHidden = () =>
+    setShowHidden((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(SHOW_HIDDEN_KEY, next ? "1" : "0");
+      } catch {}
+      return next;
+    });
 
   // Mobile drawer: focus it on open, Esc closes, Tab stays inside (same trap
   // pattern as the task EditDrawer).
@@ -118,56 +138,96 @@ export function Sidebar({
   }
 
   const hiddenCount = projects.filter((p) => p.hidden).length;
-  const visible = showHidden ? projects : projects.filter((p) => !p.hidden);
+  // A hidden project that is currently selected is always revealed (so the
+  // active row exists), without touching the stored preference.
+  const forced = projects.some((p) => p.id === selectedId && p.hidden);
+  const shown = orderForDisplay(projects, showHidden || forced);
+  const fullIds = projects.map((p) => p.id);
+  const visibleIds = projects.filter((p) => !p.hidden).map((p) => p.id);
+  const hiddenIds = projects.filter((p) => p.hidden).map((p) => p.id);
+  const shownIds = shown.map((p) => p.id);
+  const groupOf = (p: Project) => (p.hidden ? hiddenIds : visibleIds);
 
   // Persist a new order (full ordered id list) and refresh.
-  async function reorder(next: Project[]) {
+  async function reorder(ids: string[]) {
     try {
-      await api.reorderProjects(next.map((p) => p.id));
+      await api.reorderProjects(ids);
       onProjectsChanged();
-    } catch (e: any) {
-      toast(e.message ?? "Failed to reorder", "error");
+    } catch {
+      toast(actionFailed("reorder", "projects"), "error");
     }
   }
 
-  // Move a project one slot within the FULL list (order is defined over every
-  // live project, including hidden ones), then persist.
-  function move(p: Project, dir: -1 | 1) {
-    const i = projects.findIndex((x) => x.id === p.id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= projects.length) return;
-    const next = projects.slice();
-    [next[i], next[j]] = [next[j], next[i]];
-    reorder(next);
+  // Move a project one slot within its display group (visible or hidden) and
+  // persist the resulting FULL order; rows outside the group keep their place.
+  function move(p: Project, to: -1 | 1) {
+    const next = moveVisible(fullIds, groupOf(p), p.id, to);
+    if (next) reorder(next);
   }
 
-  // When an action hides/removes the selected project from the visible list,
-  // jump to the first remaining visible one so the board is never left on a gap.
-  function selectAfter(removedId: string) {
-    if (removedId !== selectedId) return;
-    const next = visible.find((p) => p.id !== removedId);
+  // When an action removes the selected project from the shown list, jump to
+  // its nearest shown neighbour (above, else below) so the board is never left
+  // on a gap. Returns the project selected instead, for toast copy.
+  function selectAfter(removedId: string): Project | null {
+    if (removedId !== selectedId) return null;
+    const nextId = neighbourAfterRemoval(shownIds, removedId);
+    const next = nextId ? projects.find((p) => p.id === nextId) ?? null : null;
     if (next) onSelect(next.id);
+    return next;
+  }
+
+  // Undo helper: revert via `revert`, refresh, and re-select the project when
+  // it was the selected one at the time of the action.
+  function undoAction(p: Project, wasSelected: boolean, revert: () => Promise<unknown>) {
+    return {
+      label: "Undo",
+      onClick: async () => {
+        try {
+          await revert();
+          onProjectsChanged();
+          if (wasSelected) onSelect(p.id);
+        } catch {
+          toast(actionFailed("restore", p.name), "error");
+        }
+      },
+    };
   }
 
   async function setHidden(p: Project, hidden: boolean) {
+    const wasSelected = p.id === selectedId;
     try {
       await api.updateProject(p.id, { hidden });
-      if (hidden) selectAfter(p.id);
       setMenuFor(null);
+      // Only move the selection if the row actually leaves the list.
+      const next =
+        hidden && !stillShown(projects, p.id, true, showHidden) ? selectAfter(p.id) : null;
       onProjectsChanged();
-    } catch (e: any) {
-      toast(e.message ?? "Failed", "error");
+      toast(
+        hidden
+          ? `Hidden "${p.name}"${next ? ` · Now showing ${next.name}` : ""}`
+          : `Showing "${p.name}" in sidebar`,
+        "success",
+        undoAction(p, wasSelected, () => api.updateProject(p.id, { hidden: !hidden }))
+      );
+    } catch {
+      toast(actionFailed(hidden ? "hide" : "show", p.name), "error");
     }
   }
 
   async function archive(p: Project) {
+    const wasSelected = p.id === selectedId;
     try {
       await api.archiveProject(p.id);
       setMenuFor(null);
+      const next = selectAfter(p.id);
       onProjectsChanged();
-      toast(`Archived "${p.name}"`, "success");
-    } catch (e: any) {
-      toast(e.message ?? "Failed to archive", "error");
+      toast(
+        `Archived "${p.name}"${next ? ` · Now showing ${next.name}` : ""}`,
+        "success",
+        undoAction(p, wasSelected, () => api.unarchiveProject(p.id))
+      );
+    } catch {
+      toast(actionFailed("archive", p.name), "error");
     }
   }
 
@@ -177,13 +237,19 @@ export function Sidebar({
       !window.confirm(`Move project "${p.name}" to Trash? You can restore it later.`)
     )
       return;
+    const wasSelected = p.id === selectedId;
     try {
       await api.deleteProject(p.id);
       setMenuFor(null);
+      const next = selectAfter(p.id);
       onProjectsChanged();
-      toast(`Moved "${p.name}" to Trash`, "success");
-    } catch (e: any) {
-      toast(e.message ?? "Failed to delete", "error");
+      toast(
+        `Moved "${p.name}" to Trash${next ? ` · Now showing ${next.name}` : ""}`,
+        "success",
+        undoAction(p, wasSelected, () => api.restoreProject(p.id))
+      );
+    } catch {
+      toast(actionFailed("move", p.name), "error");
     }
   }
 
@@ -203,15 +269,18 @@ export function Sidebar({
   const body = (
     <>
       <nav aria-label="Projects" className="flex-1 space-y-0.5 overflow-y-auto px-2">
-        {visible.length === 0 && (
+        {shown.length === 0 && (
           <p className="px-2 py-1 text-sm text-fg-subtle">
             {projects.length === 0 ? "No projects yet" : "No visible projects"}
           </p>
         )}
-        {visible.map((p) => {
+        {shown.map((p) => {
           const active = p.id === selectedId;
           const menuOpen = menuFor === p.id;
-          const fullIdx = projects.findIndex((x) => x.id === p.id);
+          // Position within the row's own display group: ↑/↓ are disabled at
+          // the group's edges, never because of a neighbour the user can't see.
+          const groupIds = groupOf(p);
+          const gi = groupIds.indexOf(p.id);
           return (
             <div key={p.id}>
               <div className="flex items-center gap-0.5">
@@ -254,13 +323,13 @@ export function Sidebar({
                   <MenuBtn
                     label="↑"
                     title="Move up"
-                    disabled={fullIdx <= 0}
+                    disabled={gi <= 0}
                     onClick={() => move(p, -1)}
                   />
                   <MenuBtn
                     label="↓"
                     title="Move down"
-                    disabled={fullIdx >= projects.length - 1}
+                    disabled={gi >= groupIds.length - 1}
                     onClick={() => move(p, 1)}
                   />
                   <MenuBtn
@@ -284,10 +353,13 @@ export function Sidebar({
 
       {hiddenCount > 0 && (
         <button
-          onClick={() => setShowHidden((v) => !v)}
-          className="border-t border-border px-3 py-1.5 text-left text-xs text-fg-subtle hover:text-fg"
+          onClick={toggleShowHidden}
+          disabled={forced}
+          aria-pressed={showHidden || forced}
+          title={forced ? "Shown because the current project is hidden" : undefined}
+          className="border-t border-border px-3 py-1.5 text-left text-xs text-fg-subtle hover:text-fg disabled:cursor-default disabled:hover:text-fg-subtle"
         >
-          {showHidden ? "Hide hidden" : `Show hidden (${hiddenCount})`}
+          {showHidden || forced ? "Hide hidden projects" : `Show hidden projects (${hiddenCount})`}
         </button>
       )}
 
@@ -342,8 +414,8 @@ export function Sidebar({
           {header(
             <button
               onClick={toggle}
-              title="Hide projects"
-              aria-label="Hide sidebar"
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
               aria-expanded={true}
               className="rounded px-2 py-0.5 text-fg-muted hover:text-fg"
             >
@@ -357,8 +429,8 @@ export function Sidebar({
         <aside className="theme-nav hidden h-full w-11 shrink-0 flex-col items-center border-r border-border py-3 md:flex">
           <button
             onClick={toggle}
-            title="Show projects"
-            aria-label="Show sidebar"
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
             aria-expanded={false}
             className="rounded px-2 py-1.5 text-fg-muted hover:text-fg"
           >
