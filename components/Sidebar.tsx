@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { toast } from "./Toast";
+import { Menu, type MenuEntry } from "./Menu";
 import {
   actionFailed,
+  moveAvailability,
   moveVisible,
   neighbourAfterRemoval,
   orderForDisplay,
@@ -17,9 +20,10 @@ import {
 // out of the top <Nav>. Open/closed state is persisted per-browser in
 // localStorage, matching the light/dark theme convention.
 //
-// Each project row carries an overflow (⋯) menu that expands inline (accordion,
-// so it never clips inside the scrollable list) with reorder / hide / archive /
-// delete actions. Hidden projects drop out of the list behind a persisted
+// Each project row carries an overflow (⋯) popover menu (components/Menu.tsx,
+// one shared instance anchored to the clicked ⋯; also opened by right-click
+// or ContextMenu / Shift+F10 on the row) with reorder / settings / hide /
+// archive / trash actions. Trash asks for confirmation inside the menu. Hidden projects drop out of the list behind a persisted
 // "Show hidden projects" toggle and, when shown, are grouped AFTER the visible
 // ones (display order only — sort_order is untouched). Reorder moves a row
 // within its own group (visible or hidden) so a hidden neighbour never makes
@@ -51,6 +55,9 @@ export function Sidebar({
   onMobileClose?: () => void;
 }) {
   const drawerRef = useRef<HTMLElement>(null);
+  const router = useRouter();
+  // The ⋯ button the open menu is anchored to (desktop list or mobile drawer).
+  const menuAnchor = useRef<HTMLElement | null>(null);
   // Default open; the stored preference is restored on mount (below) so the
   // server render and first client render agree (no hydration mismatch).
   const [open, setOpen] = useState(true);
@@ -160,7 +167,7 @@ export function Sidebar({
 
   // Move a project one slot within its display group (visible or hidden) and
   // persist the resulting FULL order; rows outside the group keep their place.
-  function move(p: Project, to: -1 | 1) {
+  function move(p: Project, to: -1 | 1 | "top" | "bottom") {
     const next = moveVisible(fullIds, groupOf(p), p.id, to);
     if (next) reorder(next);
   }
@@ -231,12 +238,8 @@ export function Sidebar({
     }
   }
 
+  // Confirmation happens in the menu (Move to Trash… → confirm view).
   async function del(p: Project) {
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(`Move project "${p.name}" to Trash? You can restore it later.`)
-    )
-      return;
     const wasSelected = p.id === selectedId;
     try {
       await api.deleteProject(p.id);
@@ -252,6 +255,51 @@ export function Sidebar({
       toast(actionFailed("move", p.name), "error");
     }
   }
+
+  const openMenu = (id: string, el: HTMLElement) => {
+    menuAnchor.current = el;
+    setMenuFor(id);
+  };
+  const closeMenu = useCallback((opts?: { restoreFocus?: boolean }) => {
+    setMenuFor(null);
+    if (opts?.restoreFocus !== false) menuAnchor.current?.focus();
+  }, []);
+
+  // Items for a project's ⋯ menu. Moves are limited to the row's display group
+  // (visible or hidden), so an edge is never blocked by an unseen neighbour.
+  function menuItems(p: Project): MenuEntry[] {
+    const group = groupOf(p);
+    const can = moveAvailability(group.indexOf(p.id), group.length);
+    const go = (path: string) => {
+      router.push(`${path}?project=${encodeURIComponent(p.id)}`);
+      onMobileClose?.();
+    };
+    return [
+      { kind: "item", label: "Move to top", disabled: !can.top, onSelect: () => move(p, "top") },
+      { kind: "item", label: "Move up", disabled: !can.up, onSelect: () => move(p, -1) },
+      { kind: "item", label: "Move down", disabled: !can.down, onSelect: () => move(p, 1) },
+      { kind: "item", label: "Move to bottom", disabled: !can.bottom, onSelect: () => move(p, "bottom") },
+      { kind: "separator" },
+      { kind: "item", label: "Settings", onSelect: () => go("/settings") },
+      { kind: "item", label: "Appearance", onSelect: () => go("/appearance") },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: p.hidden ? "Show in sidebar" : "Hide from sidebar",
+        onSelect: () => setHidden(p, !p.hidden),
+      },
+      { kind: "item", label: "Archive", onSelect: () => archive(p) },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: "Move to Trash…",
+        danger: true,
+        confirm: { prompt: `Move "${p.name}" to Trash?`, confirmLabel: "Move to Trash" },
+        onSelect: () => del(p),
+      },
+    ];
+  }
+  const menuProject = menuFor ? projects.find((p) => p.id === menuFor) ?? null : null;
 
   // Sidebar title row with a close control (« collapse on desktop, ✕ in the
   // mobile drawer).
@@ -277,75 +325,61 @@ export function Sidebar({
         {shown.map((p) => {
           const active = p.id === selectedId;
           const menuOpen = menuFor === p.id;
-          // Position within the row's own display group: ↑/↓ are disabled at
-          // the group's edges, never because of a neighbour the user can't see.
-          const groupIds = groupOf(p);
-          const gi = groupIds.indexOf(p.id);
           return (
-            <div key={p.id}>
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={() => pick(p.id)}
-                  aria-current={active ? "true" : undefined}
-                  title={p.name}
-                  className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${
-                    active
-                      ? "bg-accent-soft text-accent ring-1 ring-accent-border"
-                      : "text-fg-muted hover:bg-bg-soft hover:text-fg"
-                  }`}
-                >
-                  {p.hidden ? (
-                    <span
-                      title="Hidden"
-                      aria-label="Hidden"
-                      className="shrink-0 text-fg-subtle"
-                    >
-                      ⦸
-                    </span>
-                  ) : null}
-                  <span className="truncate">{p.name}</span>
-                </button>
-                <button
-                  onClick={() => setMenuFor(menuOpen ? null : p.id)}
-                  aria-label={`Actions for ${p.name}`}
-                  aria-expanded={menuOpen}
-                  title="Project actions"
-                  className={`shrink-0 rounded px-1.5 py-1.5 text-fg-subtle hover:bg-bg-soft hover:text-fg ${
-                    menuOpen ? "bg-bg-soft text-fg" : ""
-                  }`}
-                >
-                  ⋯
-                </button>
-              </div>
-
-              {menuOpen && (
-                <div className="mb-1 ml-2 mt-0.5 flex flex-wrap gap-1 rounded border border-border bg-bg-card p-1">
-                  <MenuBtn
-                    label="↑"
-                    title="Move up"
-                    disabled={gi <= 0}
-                    onClick={() => move(p, -1)}
-                  />
-                  <MenuBtn
-                    label="↓"
-                    title="Move down"
-                    disabled={gi >= groupIds.length - 1}
-                    onClick={() => move(p, 1)}
-                  />
-                  <MenuBtn
-                    label={p.hidden ? "Show" : "Hide"}
-                    title={p.hidden ? "Show in sidebar" : "Hide from sidebar"}
-                    onClick={() => setHidden(p, !p.hidden)}
-                  />
-                  <MenuBtn label="Archive" title="Archive project" onClick={() => archive(p)} />
-                  <MenuBtn
-                    label="Delete"
-                    title="Move to Trash"
-                    danger
-                    onClick={() => del(p)}
-                  />
-                </div>
-              )}
+            <div
+              key={p.id}
+              className="group flex items-center gap-0.5"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                const btn = e.currentTarget.querySelector<HTMLElement>("[data-row-menu]");
+                if (btn) openMenu(p.id, btn);
+              }}
+            >
+              <button
+                onClick={() => pick(p.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+                    e.preventDefault();
+                    const btn = e.currentTarget.parentElement?.querySelector<HTMLElement>(
+                      "[data-row-menu]"
+                    );
+                    if (btn) openMenu(p.id, btn);
+                  }
+                }}
+                aria-current={active ? "true" : undefined}
+                title={p.name}
+                className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${
+                  active
+                    ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+                    : "text-fg-muted hover:bg-bg-soft hover:text-fg"
+                }`}
+              >
+                {p.hidden ? (
+                  <span title="Hidden" aria-label="Hidden" className="shrink-0 text-fg-subtle">
+                    ⦸
+                  </span>
+                ) : null}
+                <span className="truncate">{p.name}</span>
+              </button>
+              <button
+                data-row-menu
+                onClick={(e) => (menuOpen ? closeMenu() : openMenu(p.id, e.currentTarget))}
+                aria-label={`Actions for ${p.name}`}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-controls={menuOpen ? "project-row-menu" : undefined}
+                title="Project actions"
+                className={`shrink-0 rounded px-1.5 py-1.5 text-fg-subtle hover:bg-bg-soft hover:text-fg ${
+                  menuOpen
+                    ? "bg-bg-soft text-fg"
+                    : active
+                      ? ""
+                      : // Pointer devices: only on row hover / keyboard focus.
+                        "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100"
+                }`}
+              >
+                ⋯
+              </button>
             </div>
           );
         })}
@@ -471,37 +505,15 @@ export function Sidebar({
           </aside>
         </div>
       )}
-    </>
-  );
-}
 
-// A compact button used inside a project's inline action menu.
-function MenuBtn({
-  label,
-  title,
-  onClick,
-  disabled,
-  danger,
-}: {
-  label: string;
-  title: string;
-  onClick: () => void;
-  disabled?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      className={`rounded border border-border px-2 py-1 text-xs disabled:opacity-40 ${
-        danger
-          ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-          : "text-fg-muted hover:bg-bg-soft hover:text-fg"
-      }`}
-    >
-      {label}
-    </button>
+      <Menu
+        id="project-row-menu"
+        label={menuProject ? `Actions for ${menuProject.name}` : "Project actions"}
+        open={!!menuProject}
+        onClose={closeMenu}
+        anchorRef={menuAnchor}
+        items={menuProject ? menuItems(menuProject) : []}
+      />
+    </>
   );
 }
