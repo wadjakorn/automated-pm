@@ -49,3 +49,29 @@ export function placeMenu(
     left: clamp(left, viewport.width - menu.width - MARGIN),
   };
 }
+
+export type MenuKeyAction =
+  | "pass"
+  | "swallow"
+  | "close"
+  | "back"
+  | { step: 1 | -1 | "first" | "last" };
+
+// What a keydown inside the menu means. Auto-repeated Enter/Space are
+// swallowed so holding the key that opened the confirm view can't also
+// confirm it; a fresh Enter/Space passes through to the focused button.
+export function menuKeyAction(e: {
+  key: string;
+  repeat: boolean;
+  confirming: boolean;
+}): MenuKeyAction {
+  if ((e.key === "Enter" || e.key === " ") && e.repeat) return "swallow";
+  if (e.key === "Escape") return e.confirming ? "back" : "close";
+  if (e.key === "Tab") return "close";
+  if (e.confirming) return "pass";
+  if (e.key === "ArrowDown") return { step: 1 };
+  if (e.key === "ArrowUp") return { step: -1 };
+  if (e.key === "Home") return { step: "first" };
+  if (e.key === "End") return { step: "last" };
+  return "pass";
+}

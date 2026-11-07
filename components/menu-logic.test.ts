@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextEnabledIndex, placeMenu } from "./menu-logic";
+import { menuKeyAction, nextEnabledIndex, placeMenu } from "./menu-logic";
 
 describe("nextEnabledIndex", () => {
   const d = [false, true, false, false];
@@ -65,5 +65,32 @@ describe("placeMenu", () => {
     const a = { top: 380, bottom: 410, left: 200, right: 230 };
     const tall = { width: 180, height: 900 };
     expect(placeMenu(a, tall, viewport, "start").top).toBe(8);
+  });
+});
+
+describe("menuKeyAction", () => {
+  const k = (key: string, extra: Partial<{ repeat: boolean; confirming: boolean }> = {}) =>
+    menuKeyAction({ key, repeat: false, confirming: false, ...extra });
+
+  it("ignores auto-repeated Enter and Space so a held key cannot confirm", () => {
+    expect(k("Enter", { repeat: true })).toBe("swallow");
+    expect(k(" ", { repeat: true, confirming: true })).toBe("swallow");
+  });
+  it("lets a fresh Enter through to the focused button", () => {
+    expect(k("Enter")).toBe("pass");
+  });
+  it("Esc closes the list but backs out of the confirm view", () => {
+    expect(k("Escape")).toBe("close");
+    expect(k("Escape", { confirming: true })).toBe("back");
+  });
+  it("Tab closes", () => {
+    expect(k("Tab")).toBe("close");
+  });
+  it("maps arrows and Home/End to roving steps, but not in the confirm view", () => {
+    expect(k("ArrowDown")).toEqual({ step: 1 });
+    expect(k("ArrowUp")).toEqual({ step: -1 });
+    expect(k("Home")).toEqual({ step: "first" });
+    expect(k("End")).toEqual({ step: "last" });
+    expect(k("ArrowDown", { confirming: true })).toBe("pass");
   });
 });

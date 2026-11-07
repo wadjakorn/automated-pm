@@ -204,7 +204,6 @@ export function Sidebar({
     const wasSelected = p.id === selectedId;
     try {
       await api.updateProject(p.id, { hidden });
-      setMenuFor(null);
       // Only move the selection if the row actually leaves the list.
       const next =
         hidden && !stillShown(projects, p.id, true, showHidden) ? selectAfter(p.id) : null;
@@ -225,7 +224,6 @@ export function Sidebar({
     const wasSelected = p.id === selectedId;
     try {
       await api.archiveProject(p.id);
-      setMenuFor(null);
       const next = selectAfter(p.id);
       onProjectsChanged();
       toast(
@@ -243,7 +241,6 @@ export function Sidebar({
     const wasSelected = p.id === selectedId;
     try {
       await api.deleteProject(p.id);
-      setMenuFor(null);
       const next = selectAfter(p.id);
       onProjectsChanged();
       toast(

@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { nextEnabledIndex, placeMenu } from "./menu-logic";
+import { menuKeyAction, nextEnabledIndex, placeMenu } from "./menu-logic";
 
 // Popover action menu anchored to a trigger button (PM-0018). Rendered in a
 // portal on <body> with position: fixed, because the sidebar's .theme-nav uses
@@ -10,7 +10,7 @@ import { nextEnabledIndex, placeMenu } from "./menu-logic";
 // Theme variables live on :root, so the portal keeps the project theme.
 //
 // Closes on Esc, Tab, item select, outside pointerdown, window resize, and
-// scroll outside the menu. Esc / Tab / select return focus to the trigger;
+// scroll outside the menu, and when keyboard focus moves outside it. Esc / Tab / select return focus to the trigger;
 // an outside click leaves focus where the user clicked. Esc calls
 // preventDefault so the mobile drawer's document listener ignores it.
 //
@@ -129,30 +129,27 @@ export function Menu({
   };
 
   const onKeyDown = (ev: React.KeyboardEvent) => {
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (confirming) setConfirming(null);
-      else close();
-      return;
-    }
-    if (ev.key === "Tab") {
-      ev.preventDefault();
-      close();
-      return;
-    }
-    if (confirming) return;
-    const cur = itemRefs.current.findIndex((el) => el === document.activeElement);
-    const step =
-      ev.key === "ArrowDown" ? 1
-      : ev.key === "ArrowUp" ? -1
-      : ev.key === "Home" ? "first"
-      : ev.key === "End" ? "last"
-      : null;
-    if (step === null) return;
+    const action = menuKeyAction({ key: ev.key, repeat: ev.repeat, confirming: !!confirming });
+    if (action === "pass") return;
     ev.preventDefault();
-    const next = nextEnabledIndex(disabled, cur < 0 ? -1 : cur, step);
-    if (next >= 0) itemRefs.current[next]?.focus();
+    if (action === "swallow") return;
+    ev.stopPropagation();
+    if (action === "back") setConfirming(null);
+    else if (action === "close") close();
+    else {
+      const cur = itemRefs.current.findIndex((el) => el === document.activeElement);
+      const next = nextEnabledIndex(disabled, cur, action.step);
+      if (next >= 0) itemRefs.current[next]?.focus();
+    }
+  };
+
+  // Focus moving somewhere else without a pointer (Board's "/" shortcut,
+  // Ctrl+K palette, screen-reader navigation) closes the menu too.
+  const onBlur = (ev: React.FocusEvent) => {
+    const to = ev.relatedTarget as Node | null;
+    if (!to) return; // focus went to <body> / window blur — pointer handler covers clicks
+    if (menuRef.current?.contains(to) || anchorRef.current?.contains(to)) return;
+    onClose({ restoreFocus: false });
   };
 
   let ai = -1;
@@ -164,6 +161,7 @@ export function Menu({
       aria-label={label}
       tabIndex={-1}
       onKeyDown={onKeyDown}
+      onBlur={onBlur}
       style={{
         position: "fixed",
         top: pos?.top ?? 0,
