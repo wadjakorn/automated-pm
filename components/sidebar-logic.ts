@@ -90,3 +90,24 @@ export function moveAvailability(
   const down = inGroup && index < length - 1;
   return { top: up, up, down, bottom: down };
 }
+
+// Drag-and-drop: move `id` onto the slot of `overId` within its display group
+// (after it when dragging down, before it when dragging up) and splice the
+// result into the full order, like moveVisible. Null when nothing changes or
+// the target is outside the group.
+export function dropOnto(
+  fullIds: string[],
+  groupIds: string[],
+  id: string,
+  overId: string | null
+): string[] | null {
+  if (!overId || overId === id) return null;
+  const from = groupIds.indexOf(id);
+  const to = groupIds.indexOf(overId);
+  if (from < 0 || to < 0 || !fullIds.includes(id)) return null;
+  const rest = fullIds.filter((x) => x !== id);
+  const ai = rest.indexOf(overId);
+  if (ai < 0) return null;
+  rest.splice(to < from ? ai : ai + 1, 0, id);
+  return rest;
+}

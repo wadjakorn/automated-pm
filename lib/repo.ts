@@ -477,14 +477,34 @@ export function unarchiveProject(projectId: string): Project {
 // Persist a new sidebar order. `orderedIds` is the full ordered list of live
 // project ids; each is written sort_order = its index. Unknown/deleted ids are
 // no-ops. Returns the freshly ordered live list.
+// Reorder live projects. Callers usually send only the projects they can see
+// (the sidebar never sees archived ones), so every other live project
+// (archived) is kept right after the project that preceded it before the
+// reorder (or first, if nothing did). Every live project is then renumbered
+// 1..n, so sort_order stays unique and an unarchived project returns next to
+// its old neighbour instead of a stale, colliding slot.
 export function reorderProjects(orderedIds: string[]): Project[] {
   const db = getDb();
   const tx = db.transaction(() => {
     const ts = now();
+    const full = listProjects({ includeArchived: true }).map((p) => p.id);
+    const known = new Set(full);
+    const given: string[] = [];
+    for (const id of orderedIds) if (known.has(id) && !given.includes(id)) given.push(id);
+    const listed = new Set(given);
+    // Unlisted ids grouped under the listed id before them ("" = the start).
+    const after = new Map<string, string[]>();
+    let anchor = "";
+    for (const id of full) {
+      if (listed.has(id)) anchor = id;
+      else after.set(anchor, [...(after.get(anchor) ?? []), id]);
+    }
+    const next = [...(after.get("") ?? [])];
+    for (const id of given) next.push(id, ...(after.get(id) ?? []));
     const upd = db.prepare(
       "UPDATE projects SET sort_order=?, updated_at=? WHERE id=? AND deleted_at IS NULL"
     );
-    orderedIds.forEach((pid, i) => upd.run(i + 1, ts, pid));
+    next.forEach((pid, i) => upd.run(i + 1, ts, pid));
   });
   tx();
   return listProjects({ includeArchived: true });
