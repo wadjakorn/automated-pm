@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Project } from "@/lib/types";
 import {
   dropOnto,
+  rovingTarget,
   actionFailed,
   moveAvailability,
   moveVisible,
@@ -164,5 +165,29 @@ describe("dropOnto", () => {
     expect(dropOnto(full, visible, "a", "a")).toBeNull();
     expect(dropOnto(full, visible, "a", "h2")).toBeNull();
     expect(dropOnto(full, visible, "a", null)).toBeNull();
+  });
+});
+
+describe("rovingTarget", () => {
+  const names = ["capz", "automated-pm", "Clipz", "viditor"];
+
+  it("arrows step and stop at the ends", () => {
+    expect(rovingTarget(names, 1, "ArrowDown")).toBe(2);
+    expect(rovingTarget(names, 3, "ArrowDown")).toBe(3);
+    expect(rovingTarget(names, 0, "ArrowUp")).toBe(0);
+  });
+  it("Home / End jump to the ends", () => {
+    expect(rovingTarget(names, 2, "Home")).toBe(0);
+    expect(rovingTarget(names, 0, "End")).toBe(3);
+  });
+  it("type-ahead finds the next name starting with the letter, wrapping, case-insensitive", () => {
+    expect(rovingTarget(names, 0, "c")).toBe(2);
+    expect(rovingTarget(names, 2, "C")).toBe(0);
+    expect(rovingTarget(names, 0, "v")).toBe(3);
+  });
+  it("returns null for other keys or no match", () => {
+    expect(rovingTarget(names, 0, "x")).toBeNull();
+    expect(rovingTarget(names, 0, "Enter")).toBeNull();
+    expect(rovingTarget([], -1, "ArrowDown")).toBeNull();
   });
 });
