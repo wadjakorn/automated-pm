@@ -2,12 +2,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  DndContext,
+  KeyboardSensor,
+  KeyboardCode,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { toast } from "./Toast";
 import { Menu, type MenuEntry } from "./Menu";
 import {
   actionFailed,
+  dropOnto,
   moveAvailability,
   moveVisible,
   neighbourAfterRemoval,
@@ -40,7 +59,7 @@ const SIDEBAR_KEY = "sidebar:open";
 const SHOW_HIDDEN_KEY = "sidebar:show-hidden";
 
 export function Sidebar({
-  projects,
+  projects: projectsProp,
   selectedId,
   onSelect,
   onProjectsChanged,
@@ -62,6 +81,12 @@ export function Sidebar({
   // used", not current.
   lastUsed?: boolean;
 }) {
+  // Optimistic order after a reorder, until the refetched list arrives.
+  const [optimistic, setOptimistic] = useState<string[] | null>(null);
+  useEffect(() => setOptimistic(null), [projectsProp]);
+  const projects = optimistic
+    ? [...projectsProp].sort((a, b) => optimistic.indexOf(a.id) - optimistic.indexOf(b.id))
+    : projectsProp;
   const drawerRef = useRef<HTMLElement>(null);
   const deskRef = useRef<HTMLElement>(null);
   const router = useRouter();
@@ -190,14 +215,59 @@ export function Sidebar({
   const shownIds = shown.map((p) => p.id);
   const groupOf = (p: Project) => (p.hidden ? hiddenIds : visibleIds);
 
-  // Persist a new order (full ordered id list) and refresh.
+  // Show the new order (full ordered id list) at once, persist it in one
+  // request, then refresh once. On failure, drop the optimistic order.
   async function reorder(ids: string[]) {
+    setOptimistic(ids);
     try {
       await api.reorderProjects(ids);
-      onProjectsChanged();
     } catch {
+      setOptimistic(null);
       toast(actionFailed("reorder", "projects"), "error");
     }
+    onProjectsChanged();
+  }
+
+  // Drag-and-drop (grip ⋮⋮ is the activator). Same sensors as the board:
+  // mouse after 5px, touch after a 200ms long-press, keyboard Space/Enter to
+  // pick up and drop, arrows to move, Esc to cancel.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, {
+      keyboardCodes: {
+        start: [KeyboardCode.Space, KeyboardCode.Enter],
+        cancel: [KeyboardCode.Esc],
+        end: [KeyboardCode.Space, KeyboardCode.Enter],
+      },
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+  const nameOf = (id: unknown) => projects.find((p) => p.id === id)?.name ?? "project";
+  const posIn = (id: unknown) => {
+    const p = projects.find((x) => x.id === id);
+    const g = p ? groupOf(p) : [];
+    return `position ${g.indexOf(String(id)) + 1} of ${g.length}`;
+  };
+  const dndA11y = {
+    screenReaderInstructions: {
+      draggable:
+        "Press Space or Enter to pick up the project. Use the Up and Down arrows to move it, Space or Enter to drop, or Escape to cancel.",
+    },
+    announcements: {
+      onDragStart: ({ active }: any) => `Picked up ${nameOf(active.id)}, ${posIn(active.id)}.`,
+      onDragOver: ({ active, over }: any) =>
+        over ? `${nameOf(active.id)} is over ${posIn(over.id)}.` : `${nameOf(active.id)} is not over the list.`,
+      onDragEnd: ({ active, over }: any) =>
+        over ? `Dropped ${nameOf(active.id)} at ${posIn(over.id)}.` : `Dropped ${nameOf(active.id)}.`,
+      onDragCancel: ({ active }: any) => `Reorder cancelled. ${nameOf(active.id)} stays put.`,
+    },
+  };
+  function onDragEnd(e: DragEndEvent) {
+    const p = projects.find((x) => x.id === e.active.id);
+    if (!p) return;
+    const next = dropOnto(fullIds, groupOf(p), p.id, e.over ? String(e.over.id) : null);
+    if (next) reorder(next);
   }
 
   // Move a project one slot within its display group (visible or hidden) and
@@ -392,81 +462,36 @@ export function Sidebar({
             {projects.length === 0 ? "No projects yet" : "No visible projects"}
           </p>
         )}
-        {shown.map((p) => {
-          const active = p.id === selectedId;
-          const menuOpen = menuFor === p.id;
-          return (
-            <div
-              key={p.id}
-              className="group flex items-center gap-0.5"
-              onContextMenu={(e) => {
-                e.preventDefault();
-                const btn =
-                  e.currentTarget.querySelector<HTMLElement>("[data-row-menu]");
-                if (btn) openMenu(p.id, btn);
-              }}
-            >
-              <button
-                onClick={() => pick(p.id)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "ContextMenu" ||
-                    (e.key === "F10" && e.shiftKey)
-                  ) {
-                    e.preventDefault();
-                    const btn =
-                      e.currentTarget.parentElement?.querySelector<HTMLElement>(
-                        "[data-row-menu]",
-                      );
-                    if (btn) openMenu(p.id, btn);
-                  }
-                }}
-                data-selected-row={active || undefined}
-                aria-current={active && !lastUsed ? "page" : undefined}
-                title={active && lastUsed ? `${p.name} (last used)` : p.name}
-                className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${
-                  active && !lastUsed
-                    ? "bg-accent-soft text-accent ring-1 ring-accent-border"
-                    : active
-                      ? "text-fg ring-1 ring-border hover:bg-bg-soft"
-                      : "text-fg-muted hover:bg-bg-soft hover:text-fg"
-                }`}
-              >
-                {p.hidden ? (
-                  <span
-                    title="Hidden"
-                    aria-label="Hidden"
-                    className="shrink-0 text-fg-subtle"
-                  >
-                    ⦸
-                  </span>
-                ) : null}
-                <span className="truncate">{p.name}</span>
-              </button>
-              <button
-                data-row-menu
-                onClick={(e) =>
-                  menuOpen ? closeMenu() : openMenu(p.id, e.currentTarget)
-                }
-                aria-label={`Actions for ${p.name}`}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                aria-controls={menuOpen ? "project-row-menu" : undefined}
-                title="Project actions"
-                className={`shrink-0 rounded px-1.5 py-1.5 text-fg-subtle hover:bg-bg-soft hover:text-fg ${
-                  menuOpen
-                    ? "bg-bg-soft text-fg"
-                    : active
-                      ? ""
-                      : // Pointer devices: only on row hover / keyboard focus.
-                        "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100"
-                }`}
-              >
-                ⋯
-              </button>
-            </div>
-          );
-        })}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          accessibility={dndA11y}
+          onDragEnd={onDragEnd}
+        >
+          {[shown.filter((p) => !p.hidden), shown.filter((p) => p.hidden)].map(
+            (group, gi) =>
+              group.length > 0 && (
+                <SortableContext
+                  key={gi}
+                  items={group.map((p) => p.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {group.map((p) => (
+                    <ProjectRow
+                      key={p.id}
+                      p={p}
+                      active={p.id === selectedId}
+                      lastUsed={lastUsed}
+                      menuOpen={menuFor === p.id}
+                      onPick={() => pick(p.id)}
+                      onOpenMenu={(el) => openMenu(p.id, el)}
+                      onCloseMenu={() => closeMenu()}
+                    />
+                  ))}
+                </SortableContext>
+              )
+          )}
+        </DndContext>
       </nav>
 
       {hiddenCount > 0 && (
@@ -610,5 +635,110 @@ export function Sidebar({
         items={menuProject ? menuItems(menuProject) : []}
       />
     </>
+  );
+}
+
+// One sortable project row: grip ⋮⋮ (the drag activator, so dnd-kit's
+// role/tabIndex/aria attributes land on the grip, not the row), the project
+// button, and the ⋯ menu trigger. Grip and ⋯ show on row hover / focus, on the
+// active row, and always on touch screens.
+const REVEAL =
+  "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100";
+
+function ProjectRow({
+  p,
+  active,
+  lastUsed,
+  menuOpen,
+  onPick,
+  onOpenMenu,
+  onCloseMenu,
+}: {
+  p: Project;
+  active: boolean;
+  lastUsed: boolean;
+  menuOpen: boolean;
+  onPick: () => void;
+  onOpenMenu: (el: HTMLElement) => void;
+  onCloseMenu: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: p.id });
+  const openFromRow = (root: HTMLElement | null | undefined) => {
+    const btn = root?.querySelector<HTMLElement>("[data-row-menu]");
+    if (btn) onOpenMenu(btn);
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`group relative flex items-center gap-0.5 ${
+        isDragging ? "z-10 rounded bg-bg-card shadow-md" : ""
+      }`}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        openFromRow(e.currentTarget);
+      }}
+    >
+      <button
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${p.name}`}
+        title="Drag to reorder"
+        className={`shrink-0 cursor-grab touch-none rounded px-0.5 py-1.5 text-xs leading-none text-fg-subtle hover:text-fg active:cursor-grabbing ${
+          isDragging || active ? "" : REVEAL
+        }`}
+      >
+        <span aria-hidden="true">⋮⋮</span>
+      </button>
+      <button
+        onClick={onPick}
+        onKeyDown={(e) => {
+          if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+            e.preventDefault();
+            openFromRow(e.currentTarget.parentElement);
+          }
+        }}
+        data-selected-row={active || undefined}
+        aria-current={active && !lastUsed ? "page" : undefined}
+        title={active && lastUsed ? `${p.name} (last used)` : p.name}
+        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${
+          active && !lastUsed
+            ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+            : active
+              ? "text-fg ring-1 ring-border hover:bg-bg-soft"
+              : "text-fg-muted hover:bg-bg-soft hover:text-fg"
+        }`}
+      >
+        {p.hidden ? (
+          <span title="Hidden" aria-label="Hidden" className="shrink-0 text-fg-subtle">
+            ⦸
+          </span>
+        ) : null}
+        <span className="truncate">{p.name}</span>
+      </button>
+      <button
+        data-row-menu
+        onClick={(e) => (menuOpen ? onCloseMenu() : onOpenMenu(e.currentTarget))}
+        aria-label={`Actions for ${p.name}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        aria-controls={menuOpen ? "project-row-menu" : undefined}
+        title="Project actions"
+        className={`shrink-0 rounded px-1.5 py-1.5 text-fg-subtle hover:bg-bg-soft hover:text-fg ${
+          menuOpen ? "bg-bg-soft text-fg" : active ? "" : REVEAL
+        }`}
+      >
+        ⋯
+      </button>
+    </div>
   );
 }

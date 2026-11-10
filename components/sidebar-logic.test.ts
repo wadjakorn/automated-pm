@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Project } from "@/lib/types";
 import {
+  dropOnto,
   actionFailed,
   moveAvailability,
   moveVisible,
@@ -146,5 +147,22 @@ describe("moveAvailability", () => {
   });
   it("a row missing from its group cannot move", () => {
     expect(moveAvailability(-1, 3)).toEqual({ top: false, up: false, down: false, bottom: false });
+  });
+});
+
+describe("dropOnto", () => {
+  const full = ["h1", "a", "h2", "b", "c"];
+  const visible = ["a", "b", "c"];
+
+  it("dragging down lands after the row dropped on", () => {
+    expect(dropOnto(full, visible, "a", "c")).toEqual(["h1", "h2", "b", "c", "a"]);
+  });
+  it("dragging up lands before the row dropped on", () => {
+    expect(dropOnto(full, visible, "c", "a")).toEqual(["h1", "c", "a", "h2", "b"]);
+  });
+  it("is a no-op on itself or onto another group", () => {
+    expect(dropOnto(full, visible, "a", "a")).toBeNull();
+    expect(dropOnto(full, visible, "a", "h2")).toBeNull();
+    expect(dropOnto(full, visible, "a", null)).toBeNull();
   });
 });

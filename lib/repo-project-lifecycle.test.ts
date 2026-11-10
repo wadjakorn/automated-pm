@@ -35,6 +35,26 @@ describe("project sort order", () => {
       .map((p) => p.id);
     expect(after).toEqual(reversed);
   });
+
+  it("reorder without archived ids keeps an archived project in its slot", () => {
+    const x = repo.createProject("slot-x");
+    const y = repo.createProject("slot-y");
+    const z = repo.createProject("slot-z");
+    const w = repo.createProject("slot-w");
+    repo.archiveProject(y.id);
+    // The sidebar only knows live, unarchived projects.
+    const live = repo.listProjects().map((p) => p.id);
+    const moved = [w.id, ...live.filter((id) => id !== w.id)];
+    repo.reorderProjects(moved);
+    repo.unarchiveProject(y.id);
+    const slot = repo
+      .listProjects()
+      .filter((p) => p.name.startsWith("slot-"))
+      .map((p) => p.name);
+    expect(slot).toEqual(["slot-w", "slot-x", "slot-y", "slot-z"]);
+    const orders = repo.listProjects({ includeArchived: true }).map((p) => p.sort_order);
+    expect(new Set(orders).size).toBe(orders.length);
+  });
 });
 
 describe("project hidden", () => {
