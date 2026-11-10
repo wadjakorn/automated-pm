@@ -70,6 +70,8 @@ export default {
         "drawer-in": "drawer-in 200ms ease-out",
         "fade-in": "fade-in 150ms ease-out",
         "drawer-in-left": "drawer-in-left 200ms ease-out",
+        // The live dot pings once when the stream connects, then rests.
+        "ping-once": "ping 1s cubic-bezier(0, 0, 0.2, 1) 1 forwards",
       },
     },
   },
