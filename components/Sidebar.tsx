@@ -33,7 +33,7 @@ import {
 // Below the `md` breakpoint the in-flow sidebar (rail or expanded) is not
 // rendered at all — it would eat most of a phone's width. Instead the same
 // contents open as an overlay drawer, driven by `mobileOpen` from the header's
-// hamburger (see AppShell/Nav). It starts closed, isn't persisted, and closes
+// project-name button (see AppShell/Nav). It starts closed, isn't persisted, and closes
 // on project select, backdrop tap or Esc. The desktop open/closed preference
 // (SIDEBAR_KEY) is untouched by it.
 const SIDEBAR_KEY = "sidebar:open";
@@ -46,6 +46,8 @@ export function Sidebar({
   onProjectsChanged,
   mobileOpen = false,
   onMobileClose,
+  revealRequest = 0,
+  lastUsed = false,
 }: {
   projects: Project[];
   selectedId: string | null;
@@ -53,8 +55,15 @@ export function Sidebar({
   onProjectsChanged: () => void;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
+  // Changes when the header's project name is clicked on desktop: expand and
+  // focus the active row.
+  revealRequest?: number;
+  // A cross-project page (/home, /inbox): the selected row is styled as "last
+  // used", not current.
+  lastUsed?: boolean;
 }) {
   const drawerRef = useRef<HTMLElement>(null);
+  const deskRef = useRef<HTMLElement>(null);
   const router = useRouter();
   // The ⋯ button the open menu is anchored to (desktop list or mobile drawer).
   const menuAnchor = useRef<HTMLElement | null>(null);
@@ -73,6 +82,29 @@ export function Sidebar({
     if (localStorage.getItem(SIDEBAR_KEY) === "0") setOpen(false);
     if (localStorage.getItem(SHOW_HIDDEN_KEY) === "1") setShowHidden(true);
   }, []);
+
+  // Header project name → expand (persisted) and focus the active row. The
+  // focus waits for the expanded aside to exist (it may still be the rail).
+  const pendingReveal = useRef(false);
+  useEffect(() => {
+    if (!revealRequest) return;
+    pendingReveal.current = true;
+    setOpen(true);
+    try {
+      localStorage.setItem(SIDEBAR_KEY, "1");
+    } catch {}
+  }, [revealRequest]);
+  useEffect(() => {
+    if (!pendingReveal.current || !open) return;
+    const root = deskRef.current;
+    if (!root) return;
+    pendingReveal.current = false;
+    const row =
+      root.querySelector<HTMLElement>("[data-selected-row]") ??
+      root.querySelector<HTMLElement>("nav button");
+    row?.focus();
+    row?.scrollIntoView({ block: "nearest" });
+  }, [open, revealRequest]);
 
   const toggleShowHidden = () =>
     setShowHidden((v) => {
@@ -97,13 +129,16 @@ export function Sidebar({
       }
       if (e.key !== "Tab" || !drawerRef.current) return;
       const focusable = drawerRef.current.querySelectorAll<HTMLElement>(
-        'a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])'
+        'a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])',
       );
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       const activeEl = document.activeElement as HTMLElement | null;
-      if (e.shiftKey && (activeEl === first || activeEl === drawerRef.current)) {
+      if (
+        e.shiftKey &&
+        (activeEl === first || activeEl === drawerRef.current)
+      ) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && activeEl === last) {
@@ -178,14 +213,20 @@ export function Sidebar({
   function selectAfter(removedId: string): Project | null {
     if (removedId !== selectedId) return null;
     const nextId = neighbourAfterRemoval(shownIds, removedId);
-    const next = nextId ? projects.find((p) => p.id === nextId) ?? null : null;
+    const next = nextId
+      ? (projects.find((p) => p.id === nextId) ?? null)
+      : null;
     if (next) onSelect(next.id);
     return next;
   }
 
   // Undo helper: revert via `revert`, refresh, and re-select the project when
   // it was the selected one at the time of the action.
-  function undoAction(p: Project, wasSelected: boolean, revert: () => Promise<unknown>) {
+  function undoAction(
+    p: Project,
+    wasSelected: boolean,
+    revert: () => Promise<unknown>,
+  ) {
     return {
       label: "Undo",
       onClick: async () => {
@@ -206,14 +247,18 @@ export function Sidebar({
       await api.updateProject(p.id, { hidden });
       // Only move the selection if the row actually leaves the list.
       const next =
-        hidden && !stillShown(projects, p.id, true, showHidden) ? selectAfter(p.id) : null;
+        hidden && !stillShown(projects, p.id, true, showHidden)
+          ? selectAfter(p.id)
+          : null;
       onProjectsChanged();
       toast(
         hidden
           ? `Hidden "${p.name}"${next ? ` · Now showing ${next.name}` : ""}`
           : `Showing "${p.name}" in sidebar`,
         "success",
-        undoAction(p, wasSelected, () => api.updateProject(p.id, { hidden: !hidden }))
+        undoAction(p, wasSelected, () =>
+          api.updateProject(p.id, { hidden: !hidden }),
+        ),
       );
     } catch {
       toast(actionFailed(hidden ? "hide" : "show", p.name), "error");
@@ -229,7 +274,7 @@ export function Sidebar({
       toast(
         `Archived "${p.name}"${next ? ` · Now showing ${next.name}` : ""}`,
         "success",
-        undoAction(p, wasSelected, () => api.unarchiveProject(p.id))
+        undoAction(p, wasSelected, () => api.unarchiveProject(p.id)),
       );
     } catch {
       toast(actionFailed("archive", p.name), "error");
@@ -246,7 +291,7 @@ export function Sidebar({
       toast(
         `Moved "${p.name}" to Trash${next ? ` · Now showing ${next.name}` : ""}`,
         "success",
-        undoAction(p, wasSelected, () => api.restoreProject(p.id))
+        undoAction(p, wasSelected, () => api.restoreProject(p.id)),
       );
     } catch {
       toast(actionFailed("move", p.name), "error");
@@ -272,10 +317,30 @@ export function Sidebar({
       onMobileClose?.();
     };
     return [
-      { kind: "item", label: "Move to top", disabled: !can.top, onSelect: () => move(p, "top") },
-      { kind: "item", label: "Move up", disabled: !can.up, onSelect: () => move(p, -1) },
-      { kind: "item", label: "Move down", disabled: !can.down, onSelect: () => move(p, 1) },
-      { kind: "item", label: "Move to bottom", disabled: !can.bottom, onSelect: () => move(p, "bottom") },
+      {
+        kind: "item",
+        label: "Move to top",
+        disabled: !can.top,
+        onSelect: () => move(p, "top"),
+      },
+      {
+        kind: "item",
+        label: "Move up",
+        disabled: !can.up,
+        onSelect: () => move(p, -1),
+      },
+      {
+        kind: "item",
+        label: "Move down",
+        disabled: !can.down,
+        onSelect: () => move(p, 1),
+      },
+      {
+        kind: "item",
+        label: "Move to bottom",
+        disabled: !can.bottom,
+        onSelect: () => move(p, "bottom"),
+      },
       { kind: "separator" },
       { kind: "item", label: "Settings", onSelect: () => go("/settings") },
       { kind: "item", label: "Appearance", onSelect: () => go("/appearance") },
@@ -291,17 +356,22 @@ export function Sidebar({
         kind: "item",
         label: "Move to Trash…",
         danger: true,
-        confirm: { prompt: `Move "${p.name}" to Trash?`, confirmLabel: "Move to Trash" },
+        confirm: {
+          prompt: `Move "${p.name}" to Trash?`,
+          confirmLabel: "Move to Trash",
+        },
         onSelect: () => del(p),
       },
     ];
   }
-  const menuProject = menuFor ? projects.find((p) => p.id === menuFor) ?? null : null;
+  const menuProject = menuFor
+    ? (projects.find((p) => p.id === menuFor) ?? null)
+    : null;
 
   // Sidebar title row with a close control (« collapse on desktop, ✕ in the
   // mobile drawer).
   const header = (control: React.ReactNode) => (
-    <div className="flex items-center justify-between px-3 py-3">
+    <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3">
       <span className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
         Projects
       </span>
@@ -313,7 +383,10 @@ export function Sidebar({
   // and the mobile drawer; CSS guarantees only one is ever displayed.
   const body = (
     <>
-      <nav aria-label="Projects" className="flex-1 space-y-0.5 overflow-y-auto px-2">
+      <nav
+        aria-label="Projects"
+        className="flex-1 space-y-0.5 overflow-y-auto px-2"
+      >
         {shown.length === 0 && (
           <p className="px-2 py-1 text-sm text-fg-subtle">
             {projects.length === 0 ? "No projects yet" : "No visible projects"}
@@ -328,31 +401,43 @@ export function Sidebar({
               className="group flex items-center gap-0.5"
               onContextMenu={(e) => {
                 e.preventDefault();
-                const btn = e.currentTarget.querySelector<HTMLElement>("[data-row-menu]");
+                const btn =
+                  e.currentTarget.querySelector<HTMLElement>("[data-row-menu]");
                 if (btn) openMenu(p.id, btn);
               }}
             >
               <button
                 onClick={() => pick(p.id)}
                 onKeyDown={(e) => {
-                  if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+                  if (
+                    e.key === "ContextMenu" ||
+                    (e.key === "F10" && e.shiftKey)
+                  ) {
                     e.preventDefault();
-                    const btn = e.currentTarget.parentElement?.querySelector<HTMLElement>(
-                      "[data-row-menu]"
-                    );
+                    const btn =
+                      e.currentTarget.parentElement?.querySelector<HTMLElement>(
+                        "[data-row-menu]",
+                      );
                     if (btn) openMenu(p.id, btn);
                   }
                 }}
-                aria-current={active ? "true" : undefined}
-                title={p.name}
+                data-selected-row={active || undefined}
+                aria-current={active && !lastUsed ? "page" : undefined}
+                title={active && lastUsed ? `${p.name} (last used)` : p.name}
                 className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${
-                  active
+                  active && !lastUsed
                     ? "bg-accent-soft text-accent ring-1 ring-accent-border"
-                    : "text-fg-muted hover:bg-bg-soft hover:text-fg"
+                    : active
+                      ? "text-fg ring-1 ring-border hover:bg-bg-soft"
+                      : "text-fg-muted hover:bg-bg-soft hover:text-fg"
                 }`}
               >
                 {p.hidden ? (
-                  <span title="Hidden" aria-label="Hidden" className="shrink-0 text-fg-subtle">
+                  <span
+                    title="Hidden"
+                    aria-label="Hidden"
+                    className="shrink-0 text-fg-subtle"
+                  >
                     ⦸
                   </span>
                 ) : null}
@@ -360,7 +445,9 @@ export function Sidebar({
               </button>
               <button
                 data-row-menu
-                onClick={(e) => (menuOpen ? closeMenu() : openMenu(p.id, e.currentTarget))}
+                onClick={(e) =>
+                  menuOpen ? closeMenu() : openMenu(p.id, e.currentTarget)
+                }
                 aria-label={`Actions for ${p.name}`}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
@@ -387,10 +474,14 @@ export function Sidebar({
           onClick={toggleShowHidden}
           disabled={forced}
           aria-pressed={showHidden || forced}
-          title={forced ? "Shown because the current project is hidden" : undefined}
+          title={
+            forced ? "Shown because the current project is hidden" : undefined
+          }
           className="border-t border-border px-3 py-1.5 text-left text-xs text-fg-subtle hover:text-fg disabled:cursor-default disabled:hover:text-fg-subtle"
         >
-          {showHidden || forced ? "Hide hidden projects" : `Show hidden projects (${hiddenCount})`}
+          {showHidden || forced
+            ? "Hide hidden projects"
+            : `Show hidden projects (${hiddenCount})`}
         </button>
       )}
 
@@ -441,7 +532,10 @@ export function Sidebar({
   return (
     <>
       {open ? (
-        <aside className="theme-nav hidden h-full w-56 shrink-0 flex-col border-r border-border md:flex">
+        <aside
+          ref={deskRef}
+          className="theme-nav hidden h-full w-56 shrink-0 flex-col border-r border-border md:flex"
+        >
           {header(
             <button
               onClick={toggle}
@@ -451,22 +545,24 @@ export function Sidebar({
               className="rounded px-2 py-0.5 text-fg-muted hover:text-fg"
             >
               «
-            </button>
+            </button>,
           )}
           {body}
         </aside>
       ) : (
         // Collapsed: a narrow rail with just the expand toggle.
-        <aside className="theme-nav hidden h-full w-11 shrink-0 flex-col items-center border-r border-border py-3 md:flex">
-          <button
-            onClick={toggle}
-            title="Expand sidebar"
-            aria-label="Expand sidebar"
-            aria-expanded={false}
-            className="rounded px-2 py-1.5 text-fg-muted hover:text-fg"
-          >
-            »
-          </button>
+        <aside className="theme-nav hidden h-full w-11 shrink-0 flex-col items-center border-r border-border md:flex">
+          <div className="flex h-14 w-full shrink-0 items-center justify-center border-b border-border">
+            <button
+              onClick={toggle}
+              title="Expand sidebar"
+              aria-label="Expand sidebar"
+              aria-expanded={false}
+              className="rounded px-2 py-1.5 text-fg-muted hover:text-fg"
+            >
+              »
+            </button>
+          </div>
         </aside>
       )}
 
@@ -495,7 +591,7 @@ export function Sidebar({
                   className="rounded px-2 py-0.5 text-fg-muted hover:text-fg"
                 >
                   ✕
-                </button>
+                </button>,
               )}
               {body}
             </div>
@@ -505,7 +601,9 @@ export function Sidebar({
 
       <Menu
         id="project-row-menu"
-        label={menuProject ? `Actions for ${menuProject.name}` : "Project actions"}
+        label={
+          menuProject ? `Actions for ${menuProject.name}` : "Project actions"
+        }
         open={!!menuProject}
         onClose={closeMenu}
         anchorRef={menuAnchor}

@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { Project } from "@/lib/types";
 import { CommandPalette } from "./CommandPalette";
 import { Nav } from "./Nav";
 import { Sidebar } from "./Sidebar";
+import { GLOBAL_PAGES } from "./nav-logic";
 
 // App chrome shared by every page: the collapsible project Sidebar on the left,
 // then a vertical stack of the top Nav + the page content. `contentClassName`
@@ -12,7 +14,10 @@ import { Sidebar } from "./Sidebar";
 // scroll/layout instead of the default vertical scroll.
 //
 // Below `md` the sidebar becomes an overlay drawer opened from the Nav's
-// hamburger; its open state lives here so the two can talk.
+// project-name button; its open state lives here so the two can talk. On
+// desktop the same button expands the sidebar and focuses the active row.
+// Cross-project pages (/home, /inbox) keep the selection but the sidebar shows
+// it as "last used" rather than current.
 export function AppShell({
   projects,
   selectedId,
@@ -33,11 +38,26 @@ export function AppShell({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Bumped by the header's project-name button on desktop: Sidebar expands
+  // and focuses the active row each time it changes.
+  const [revealRequest, setRevealRequest] = useState(0);
+  const pathname = usePathname();
+  const lastUsed = pathname in GLOBAL_PAGES;
+  const onProjectName = useCallback(() => {
+    if (window.matchMedia("(min-width: 768px)").matches)
+      setRevealRequest((n) => n + 1);
+    else setMobileOpen(true);
+  }, []);
 
   // Ctrl/⌘+K opens the command palette from anywhere (and closes it again).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "k"
+      ) {
         e.preventDefault();
         setPaletteOpen((o) => !o);
       }
@@ -48,7 +68,7 @@ export function AppShell({
   const closePalette = useCallback(() => setPaletteOpen(false), []);
   const menuRef = useRef<HTMLButtonElement>(null);
   // Stable identity: Sidebar's focus/Esc effect depends on it. Focus goes back
-  // to the hamburger so keyboard users don't land on <body>.
+  // to the project-name button so keyboard users don't land on <body>.
   const closeMobile = useCallback(() => {
     setMobileOpen(false);
     menuRef.current?.focus();
@@ -63,6 +83,8 @@ export function AppShell({
         onProjectsChanged={reload}
         mobileOpen={mobileOpen}
         onMobileClose={closeMobile}
+        revealRequest={revealRequest}
+        lastUsed={lastUsed}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <Nav
@@ -70,11 +92,13 @@ export function AppShell({
           selectedId={selectedId}
           menuRef={menuRef}
           menuOpen={mobileOpen}
-          onMenu={() => setMobileOpen(true)}
+          onProjectName={onProjectName}
           onSearch={() => setPaletteOpen(true)}
           live={live}
         />
-        <div className={contentClassName ?? "flex-1 overflow-y-auto"}>{children}</div>
+        <div className={contentClassName ?? "flex-1 overflow-y-auto"}>
+          {children}
+        </div>
       </div>
       {paletteOpen && (
         <CommandPalette
