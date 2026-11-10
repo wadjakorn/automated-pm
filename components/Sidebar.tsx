@@ -578,7 +578,7 @@ export function Sidebar({
                   ? "Open because the current project is hidden"
                   : undefined
               }
-              className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-semibold uppercase tracking-wide text-fg-subtle hover:text-fg disabled:cursor-default disabled:hover:text-fg-subtle"
+              className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-semibold max-md:min-h-11 uppercase tracking-wide text-fg-subtle hover:text-fg disabled:cursor-default disabled:hover:text-fg-subtle"
             >
               <span
                 aria-hidden="true"
@@ -625,18 +625,18 @@ export function Sidebar({
                 }
               }}
               placeholder="Project name"
-              className="w-full rounded border border-border bg-bg-card px-2 py-1.5 text-sm outline-none focus:border-accent"
+              className="w-full rounded border border-border bg-bg-card px-2 py-1.5 text-sm outline-none focus:border-accent max-md:min-h-11"
             />
             <div className="flex gap-2">
               <button
                 onClick={create}
-                className="flex-1 rounded bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
+                className="flex-1 rounded bg-accent px-3 py-1.5 text-sm text-white max-md:min-h-11 hover:bg-accent-hover"
               >
                 Add
               </button>
               <button
                 onClick={() => setCreating(false)}
-                className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
+                className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg max-md:min-h-11"
               >
                 Cancel
               </button>
@@ -645,7 +645,7 @@ export function Sidebar({
         ) : (
           <button
             onClick={() => setCreating(true)}
-            className="w-full rounded border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-card"
+            className="w-full rounded border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-card max-md:min-h-11"
           >
             + New project
           </button>
@@ -706,14 +706,14 @@ export function Sidebar({
             aria-modal="true"
             aria-label="Projects"
             tabIndex={-1}
-            className="absolute inset-y-0 left-0 w-64 max-w-[85vw] animate-drawer-in-left border-r border-border bg-bg shadow-xl outline-none"
+            className="absolute inset-y-0 left-0 w-64 max-w-[85vw] pb-[env(safe-area-inset-bottom)] animate-drawer-in-left border-r border-border bg-bg shadow-xl outline-none"
           >
             <div className="theme-nav flex h-full flex-col">
               {header(
                 <button
                   onClick={onMobileClose}
                   aria-label="Close projects"
-                  className="rounded px-2 py-0.5 text-fg-muted hover:text-fg"
+                  className="min-h-11 min-w-11 rounded px-2 py-0.5 text-fg-muted hover:text-fg"
                 >
                   ✕
                 </button>,
@@ -815,7 +815,7 @@ function ProjectRow({
         data-selected-row={active || undefined}
         aria-current={active && !lastUsed ? "page" : undefined}
         title={active && lastUsed ? `${p.name} (last used)` : p.name}
-        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm ${
+        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded px-2 py-1.5 text-left text-sm max-md:min-h-11 max-md:px-3 ${
           active && !lastUsed
             ? "bg-accent-soft text-accent ring-1 ring-accent-border"
             : active
@@ -830,7 +830,7 @@ function ProjectRow({
       {/* The grip comes after the row button in the DOM, so Tab goes row →
           grip, but sits first visually (flex order). */}
       {dimmed ? (
-        <span aria-hidden="true" className="order-first w-3 shrink-0" />
+        <span aria-hidden="true" className="order-first w-3 shrink-0 max-md:hidden" />
       ) : (
         <button
           ref={setActivatorNodeRef}
@@ -839,7 +839,7 @@ function ProjectRow({
           tabIndex={tabbable ? 0 : -1}
           aria-label={`Reorder ${p.name}`}
           title="Drag to reorder"
-          className={`order-first shrink-0 cursor-grab touch-none rounded px-0.5 py-1.5 text-xs leading-none text-fg-subtle hover:text-fg active:cursor-grabbing ${
+          className={`order-first shrink-0 cursor-grab touch-none max-md:hidden rounded px-0.5 py-1.5 text-xs leading-none text-fg-subtle hover:text-fg active:cursor-grabbing ${
             isDragging || active ? "" : REVEAL
           }`}
         >
@@ -851,7 +851,7 @@ function ProjectRow({
           onClick={onShow}
           tabIndex={tabbable ? 0 : -1}
           title="Show in sidebar"
-          className="shrink-0 rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-soft"
+          className="shrink-0 rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-soft max-md:min-h-11 max-md:min-w-11"
         >
           Show
         </button>
@@ -867,7 +867,7 @@ function ProjectRow({
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? "project-row-menu" : undefined}
         title="Project actions"
-        className={`shrink-0 rounded px-1.5 py-1.5 text-fg-subtle hover:bg-bg-soft hover:text-fg ${
+        className={`shrink-0 rounded px-1.5 py-1.5 text-fg-subtle hover:bg-bg-soft hover:text-fg max-md:min-h-11 max-md:min-w-11 ${
           menuOpen ? "bg-bg-soft text-fg" : active ? "" : REVEAL
         }`}
       >

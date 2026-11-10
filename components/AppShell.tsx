@@ -75,7 +75,7 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen supports-[height:100dvh]:h-dvh">
       {/* First tab stop on every page: jump past the sidebar and header. */}
       <a
         href="#main"
