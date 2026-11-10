@@ -7,7 +7,8 @@ import { menuKeyAction, nextEnabledIndex, placeMenu } from "./menu-logic";
 // Popover action menu anchored to a trigger button (PM-0018). Rendered in a
 // portal on <body> with position: fixed, because the sidebar's .theme-nav uses
 // backdrop-filter, which would trap a fixed child inside the scrolling list.
-// Theme variables live on :root, so the portal keeps the project theme.
+// Theme variables live on :root, so the portal keeps the project theme. Some
+// packs (apple) use a translucent --bg-card, hence the backdrop blur.
 //
 // Closes on Esc, Tab, item select, outside pointerdown, window resize, and
 // scroll outside the menu, and when keyboard focus moves outside it. Esc / Tab / select return focus to the trigger;
@@ -24,8 +25,12 @@ export type MenuEntry =
       disabled?: boolean;
       danger?: boolean;
       confirm?: { prompt: string; confirmLabel: string };
+      // Set → a radio item (role="menuitemradio", aria-checked).
+      checked?: boolean;
     }
-  | { kind: "separator" };
+  | { kind: "separator" }
+  // Non-interactive heading (e.g. the signed-in user in the account menu).
+  | { kind: "label"; text: string; sub?: string };
 
 type Item = Extract<MenuEntry, { kind: "item" }>;
 
@@ -73,8 +78,8 @@ export function Menu({
         a,
         { width: m.width, height: m.height },
         { width: window.innerWidth, height: window.innerHeight },
-        align
-      )
+        align,
+      ),
     );
   }, [open, align, anchorRef, confirming]);
 
@@ -82,7 +87,9 @@ export function Menu({
   useEffect(() => {
     if (!open || !pos) return;
     if (confirming) {
-      menuRef.current?.querySelector<HTMLButtonElement>("[data-confirm]")?.focus();
+      menuRef.current
+        ?.querySelector<HTMLButtonElement>("[data-confirm]")
+        ?.focus();
       return;
     }
     const i = nextEnabledIndex(disabled, -1, "first");
@@ -129,7 +136,11 @@ export function Menu({
   };
 
   const onKeyDown = (ev: React.KeyboardEvent) => {
-    const action = menuKeyAction({ key: ev.key, repeat: ev.repeat, confirming: !!confirming });
+    const action = menuKeyAction({
+      key: ev.key,
+      repeat: ev.repeat,
+      confirming: !!confirming,
+    });
     if (action === "pass") return;
     ev.preventDefault();
     if (action === "swallow") return;
@@ -137,7 +148,9 @@ export function Menu({
     if (action === "back") setConfirming(null);
     else if (action === "close") close();
     else {
-      const cur = itemRefs.current.findIndex((el) => el === document.activeElement);
+      const cur = itemRefs.current.findIndex(
+        (el) => el === document.activeElement,
+      );
       const next = nextEnabledIndex(disabled, cur, action.step);
       if (next >= 0) itemRefs.current[next]?.focus();
     }
@@ -148,7 +161,8 @@ export function Menu({
   const onBlur = (ev: React.FocusEvent) => {
     const to = ev.relatedTarget as Node | null;
     if (!to) return; // focus went to <body> / window blur — pointer handler covers clicks
-    if (menuRef.current?.contains(to) || anchorRef.current?.contains(to)) return;
+    if (menuRef.current?.contains(to) || anchorRef.current?.contains(to))
+      return;
     onClose({ restoreFocus: false });
   };
 
@@ -168,10 +182,14 @@ export function Menu({
         left: pos?.left ?? 0,
         visibility: pos ? "visible" : "hidden",
       }}
-      className="theme-panel z-50 min-w-44 max-w-72 border border-border bg-bg-card p-1 text-sm shadow-lg outline-none"
+      className="theme-panel z-50 min-w-44 backdrop-blur-xl max-w-72 border border-border bg-bg-card p-1 text-sm shadow-lg outline-none"
     >
       {confirming ? (
-        <div className="space-y-2 p-2" role="group" aria-label={confirming.confirm!.prompt}>
+        <div
+          className="space-y-2 p-2"
+          role="group"
+          aria-label={confirming.confirm!.prompt}
+        >
           <p className="text-fg">{confirming.confirm!.prompt}</p>
           <div className="flex gap-2">
             <button
@@ -196,7 +214,20 @@ export function Menu({
       ) : (
         items.map((e, i) => {
           if (e.kind === "separator")
-            return <div key={`sep-${i}`} role="separator" className="my-1 border-t border-border" />;
+            return (
+              <div
+                key={`sep-${i}`}
+                role="separator"
+                className="my-1 border-t border-border"
+              />
+            );
+          if (e.kind === "label")
+            return (
+              <div key={`label-${i}`} role="none" className="px-2.5 py-1.5">
+                <div className="truncate font-medium text-fg">{e.text}</div>
+                {e.sub && <div className="text-xs text-fg-subtle">{e.sub}</div>}
+              </div>
+            );
           const idx = ++ai;
           return (
             <button
@@ -204,7 +235,8 @@ export function Menu({
               ref={(el) => {
                 itemRefs.current[idx] = el;
               }}
-              role="menuitem"
+              role={e.checked === undefined ? "menuitem" : "menuitemradio"}
+              aria-checked={e.checked}
               tabIndex={-1}
               disabled={e.disabled}
               aria-disabled={e.disabled || undefined}
@@ -215,12 +247,20 @@ export function Menu({
                   : "text-fg-muted hover:bg-bg-soft hover:text-fg focus:bg-bg-soft focus:text-fg"
               }`}
             >
+              {e.checked !== undefined && (
+                <span
+                  aria-hidden="true"
+                  className="mr-1.5 inline-block w-3 text-accent"
+                >
+                  {e.checked ? "✓" : ""}
+                </span>
+              )}
               {e.label}
             </button>
           );
         })
       )}
     </div>,
-    document.body
+    document.body,
   );
 }
