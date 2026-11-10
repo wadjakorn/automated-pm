@@ -241,7 +241,7 @@ export function Menu({
               disabled={e.disabled}
               aria-disabled={e.disabled || undefined}
               onClick={() => activate(e)}
-              className={`block w-full rounded px-2.5 py-1.5 text-left outline-none disabled:cursor-default disabled:opacity-40 ${
+              className={`block w-full rounded px-2.5 py-1.5 text-left outline-none [@media(pointer:coarse)]:py-2.5 disabled:cursor-default disabled:opacity-40 ${
                 e.danger
                   ? "text-red-600 hover:bg-red-50 focus:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 dark:focus:bg-red-950"
                   : "text-fg-muted hover:bg-bg-soft hover:text-fg focus:bg-bg-soft focus:text-fg"

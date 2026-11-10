@@ -106,7 +106,7 @@ export function Nav({
       <Link
         href={href + q}
         aria-current={active ? "page" : undefined}
-        className={`rounded px-1.5 py-1.5 text-sm sm:px-3 ${
+        className={`inline-flex items-center rounded px-1.5 py-1.5 text-sm max-md:min-h-11 sm:px-3 ${
           active
             ? "bg-accent-soft text-accent ring-1 ring-accent-border"
             : "text-fg-muted hover:text-fg"
@@ -194,7 +194,7 @@ export function Nav({
           aria-expanded={menuOpen}
           aria-label={title ? `${title}, show projects` : "Show projects"}
           title={ctx.title ?? undefined}
-          className="flex min-w-0 items-baseline gap-1.5 rounded px-1.5 py-1 text-left hover:bg-bg-soft"
+          className="flex min-w-0 items-baseline gap-1.5 rounded px-1.5 py-1 text-left hover:bg-bg-soft max-md:min-h-11 max-md:items-center"
         >
           <span
             className={`truncate font-semibold ${ctx.title ? "text-fg" : "text-fg-subtle"}`}
@@ -237,7 +237,7 @@ export function Nav({
             aria-label="Search tickets or jump to a project (Ctrl+K)"
             aria-keyshortcuts="Control+K Meta+K"
             title="Search tickets or jump to a project… (Ctrl/⌘ K)"
-            className="mr-0.5 inline-flex items-center gap-2 rounded border border-border px-2 py-1.5 text-sm text-fg-muted hover:bg-bg-card hover:text-fg sm:mr-1 lg:min-w-44"
+            className="mr-0.5 inline-flex items-center justify-center gap-2 rounded border border-border px-2 py-1.5 max-md:min-h-11 max-md:min-w-11 text-sm text-fg-muted hover:bg-bg-card hover:text-fg sm:mr-1 lg:min-w-44"
           >
             <svg
               aria-hidden="true"
@@ -267,7 +267,7 @@ export function Nav({
               ? `Inbox, ${inboxCount} open question${inboxCount === 1 ? "" : "s"}`
               : "Inbox"
           }
-          className={`inline-flex items-center gap-1.5 rounded px-1.5 py-1.5 text-sm sm:px-3 ${
+          className={`inline-flex items-center gap-1.5 rounded px-1.5 py-1.5 text-sm max-md:min-h-11 sm:px-3 ${
             pathname === "/inbox"
               ? "bg-accent-soft text-accent ring-1 ring-accent-border"
               : "text-fg-muted hover:text-fg"
@@ -293,7 +293,7 @@ export function Nav({
           aria-haspopup="menu"
           aria-expanded={moreMenu}
           aria-controls={moreMenu ? "more-menu" : undefined}
-          className={`rounded px-2 py-1.5 text-sm md:hidden ${
+          className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 py-1.5 text-sm md:hidden ${
             projectMenuActive
               ? "bg-accent-soft text-accent"
               : "text-fg-muted hover:text-fg"
