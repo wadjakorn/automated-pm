@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Project } from "@/lib/types";
 import {
   dropOnto,
+  railLabels,
   rovingTarget,
   actionFailed,
   moveAvailability,
@@ -189,5 +190,29 @@ describe("rovingTarget", () => {
     expect(rovingTarget(names, 0, "x")).toBeNull();
     expect(rovingTarget(names, 0, "Enter")).toBeNull();
     expect(rovingTarget([], -1, "ArrowDown")).toBeNull();
+  });
+});
+
+describe("railLabels", () => {
+  const p = (id: string, name: string, ticket_prefix: string | null) => ({ id, name, ticket_prefix });
+
+  it("uses the ticket prefix (up to 3 chars), else the first 2 letters of the name", () => {
+    expect(railLabels([p("a", "capz", "CP"), p("b", "n8n-feed", "N8NX"), p("c", "viditor", null)])).toEqual({
+      a: "CP",
+      b: "N8N",
+      c: "VI",
+    });
+  });
+  it("widens colliding name-based labels to 3 letters", () => {
+    expect(railLabels([p("a", "capz", null), p("b", "capture", null)])).toEqual({ a: "CAP", b: "CAP" });
+    expect(railLabels([p("a", "clipz", null), p("b", "content", null), p("c", "cart", null)])).toEqual({
+      a: "CL",
+      b: "CO",
+      c: "CA",
+    });
+    expect(railLabels([p("a", "capz", null), p("b", "cart", null)])).toEqual({ a: "CAP", b: "CAR" });
+  });
+  it("skips non-alphanumerics and falls back to ?", () => {
+    expect(railLabels([p("a", "--x", null), p("b", "!!", null)])).toEqual({ a: "X", b: "?" });
   });
 });

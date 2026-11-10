@@ -27,6 +27,7 @@ import { Menu, type MenuEntry } from "./Menu";
 import {
   actionFailed,
   dropOnto,
+  railLabels,
   rovingTarget,
   moveAvailability,
   moveVisible,
@@ -241,17 +242,42 @@ export function Sidebar({
     const t = e.target as HTMLElement;
     if (!t.dataset.roving || e.ctrlKey || e.metaKey || e.altKey) return;
     const items = Array.from(
-      e.currentTarget.querySelectorAll<HTMLElement>("[data-roving]:not(:disabled)")
+      e.currentTarget.querySelectorAll<HTMLElement>(
+        "[data-roving]:not(:disabled)",
+      ),
     );
     const next = rovingTarget(
       items.map((el) => el.dataset.label ?? ""),
       items.indexOf(t),
-      e.key
+      e.key,
     );
     if (next === null) return;
     e.preventDefault();
     items[next]?.focus();
     items[next]?.scrollIntoView({ block: "nearest" });
+  };
+  // Rail chips: visible projects, plus the selected one when it is hidden so
+  // the active chip always exists. One tab stop (the active chip); arrows,
+  // Home/End and type-ahead move focus like the full list.
+  const railProjects = projects.filter((p) => !p.hidden || p.id === selectedId);
+  const chipLabels = railLabels(railProjects);
+  const railTab =
+    railProjects.find((p) => p.id === selectedId)?.id ?? railProjects[0]?.id;
+  const onRailKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    const t = e.target as HTMLElement;
+    if (!t.hasAttribute("data-rail") || e.ctrlKey || e.metaKey || e.altKey)
+      return;
+    const items = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>("[data-rail]"),
+    );
+    const next = rovingTarget(
+      items.map((el) => el.dataset.label ?? ""),
+      items.indexOf(t),
+      e.key,
+    );
+    if (next === null) return;
+    e.preventDefault();
+    items[next]?.focus();
   };
   const onListFocus = (e: React.FocusEvent<HTMLElement>) => {
     const key = (e.target as HTMLElement).dataset.roving;
@@ -434,7 +460,10 @@ export function Sidebar({
     setMenuFor(null);
     // Back to the row's project button (the ⋯ is out of the tab order).
     if (opts?.restoreFocus !== false) {
-      const row = menuAnchor.current?.parentElement?.querySelector<HTMLElement>("[data-roving]");
+      const row =
+        menuAnchor.current?.parentElement?.querySelector<HTMLElement>(
+          "[data-roving]",
+        );
       (row ?? menuAnchor.current)?.focus();
     }
   }, []);
@@ -515,7 +544,11 @@ export function Sidebar({
   // and the mobile drawer; CSS guarantees only one is ever displayed.
   const body = (
     <>
-      <ScrollFadeNav label="Projects" onKeyDown={onListKeyDown} onFocus={onListFocus}>
+      <ScrollFadeNav
+        label="Projects"
+        onKeyDown={onListKeyDown}
+        onFocus={onListFocus}
+      >
         {visibleRows.length === 0 && (
           <p className="px-2 py-1 text-sm text-fg-subtle">
             {projects.length === 0 ? (
@@ -675,7 +708,9 @@ export function Sidebar({
           {body}
         </aside>
       ) : (
-        // Collapsed: a narrow rail with just the expand toggle.
+        // Collapsed: a narrow rail — expand toggle, one chip per visible
+        // project (PM-0023: switch without expanding, active chip marked),
+        // and a + that expands into the create form.
         <aside className="theme-nav hidden h-full w-11 shrink-0 flex-col items-center border-r border-border md:flex">
           <div className="flex h-14 w-full shrink-0 items-center justify-center border-b border-border">
             <button
@@ -686,6 +721,49 @@ export function Sidebar({
               className="rounded px-2 py-1.5 text-fg-muted hover:text-fg"
             >
               »
+            </button>
+          </div>
+          <nav
+            aria-label="Projects"
+            onKeyDown={onRailKeyDown}
+            className="flex w-full flex-1 flex-col items-center gap-1.5 overflow-y-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {railProjects.map((p) => {
+              const active = p.id === selectedId;
+              return (
+                <button
+                  key={p.id}
+                  data-rail
+                  data-label={p.name}
+                  onClick={() => onSelect(p.id)}
+                  tabIndex={p.id === railTab ? 0 : -1}
+                  title={p.name}
+                  aria-label={p.name}
+                  aria-current={active && !lastUsed ? "page" : undefined}
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded text-[10px] font-semibold leading-none ${
+                    active && !lastUsed
+                      ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+                      : active
+                        ? "bg-bg-soft text-fg ring-1 ring-border"
+                        : "bg-bg-soft text-fg-muted hover:text-fg"
+                  } ${p.hidden ? "italic" : ""}`}
+                >
+                  {chipLabels[p.id]}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="flex w-full shrink-0 justify-center border-t border-border py-2">
+            <button
+              onClick={() => {
+                toggle();
+                setCreating(true);
+              }}
+              title="New project"
+              aria-label="New project"
+              className="flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-bg-soft hover:text-fg"
+            >
+              <span aria-hidden="true">+</span>
             </button>
           </div>
         </aside>
@@ -830,7 +908,10 @@ function ProjectRow({
       {/* The grip comes after the row button in the DOM, so Tab goes row →
           grip, but sits first visually (flex order). */}
       {dimmed ? (
-        <span aria-hidden="true" className="order-first w-3 shrink-0 max-md:hidden" />
+        <span
+          aria-hidden="true"
+          className="order-first w-3 shrink-0 max-md:hidden"
+        />
       ) : (
         <button
           ref={setActivatorNodeRef}
