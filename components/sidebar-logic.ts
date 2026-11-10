@@ -131,3 +131,23 @@ export function rovingTarget(labels: string[], from: number, key: string): numbe
   }
   return null;
 }
+
+// Short labels for the collapsed rail's chips: the ticket prefix (≤ 3 chars)
+// when set, else the first 2 letters/digits of the name, widened to 3 when two
+// name-based labels would collide.
+export function railLabels(
+  projects: { id: string; name: string; ticket_prefix: string | null }[]
+): Record<string, string> {
+  const clean = (s: string) => s.replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
+  const fromName = projects.filter((p) => !p.ticket_prefix);
+  const two = fromName.map((p) => clean(p.name).slice(0, 2));
+  const out: Record<string, string> = {};
+  for (const p of projects) {
+    if (p.ticket_prefix) out[p.id] = clean(p.ticket_prefix).slice(0, 3) || "?";
+  }
+  fromName.forEach((p, i) => {
+    const clash = two.filter((t) => t === two[i]).length > 1;
+    out[p.id] = clean(p.name).slice(0, clash ? 3 : 2) || "?";
+  });
+  return out;
+}
