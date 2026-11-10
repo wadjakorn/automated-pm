@@ -42,11 +42,12 @@ import {
 // Each project row carries an overflow (⋯) popover menu (components/Menu.tsx,
 // one shared instance anchored to the clicked ⋯; also opened by right-click
 // or ContextMenu / Shift+F10 on the row) with reorder / settings / hide /
-// archive / trash actions. Trash asks for confirmation inside the menu. Hidden projects drop out of the list behind a persisted
-// "Show hidden projects" toggle and, when shown, are grouped AFTER the visible
-// ones (display order only — sort_order is untouched). Reorder moves a row
-// within its own group (visible or hidden) so a hidden neighbour never makes
-// ↑/↓ a silent no-op. Archived and deleted projects leave the list entirely
+// archive / trash actions. Trash asks for confirmation inside the menu.
+// Visible rows can be dragged by their grip. Hidden projects live in a
+// collapsible "Hidden (n)" section after the list (open state persisted;
+// forced open while the selected project is hidden), faded and not draggable.
+// Menu moves stay within a row's group (visible or hidden). Archived and
+// deleted projects leave the list entirely
 // (see the Archive and Trash views); Hide / Archive / Trash toasts carry Undo.
 //
 // Below the `md` breakpoint the in-flow sidebar (rail or expanded) is not
@@ -85,7 +86,9 @@ export function Sidebar({
   const [optimistic, setOptimistic] = useState<string[] | null>(null);
   useEffect(() => setOptimistic(null), [projectsProp]);
   const projects = optimistic
-    ? [...projectsProp].sort((a, b) => optimistic.indexOf(a.id) - optimistic.indexOf(b.id))
+    ? [...projectsProp].sort(
+        (a, b) => optimistic.indexOf(a.id) - optimistic.indexOf(b.id),
+      )
     : projectsProp;
   const drawerRef = useRef<HTMLElement>(null);
   const deskRef = useRef<HTMLElement>(null);
@@ -213,6 +216,9 @@ export function Sidebar({
   const visibleIds = projects.filter((p) => !p.hidden).map((p) => p.id);
   const hiddenIds = projects.filter((p) => p.hidden).map((p) => p.id);
   const shownIds = shown.map((p) => p.id);
+  const hiddenOpen = showHidden || forced;
+  const visibleRows = shown.filter((p) => !p.hidden);
+  const hiddenRows = shown.filter((p) => p.hidden);
   const groupOf = (p: Project) => (p.hidden ? hiddenIds : visibleIds);
 
   // Show the new order (full ordered id list) at once, persist it in one
@@ -233,7 +239,9 @@ export function Sidebar({
   // pick up and drop, arrows to move, Esc to cancel.
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
     useSensor(KeyboardSensor, {
       keyboardCodes: {
         start: [KeyboardCode.Space, KeyboardCode.Enter],
@@ -241,9 +249,10 @@ export function Sidebar({
         end: [KeyboardCode.Space, KeyboardCode.Enter],
       },
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
-  const nameOf = (id: unknown) => projects.find((p) => p.id === id)?.name ?? "project";
+  const nameOf = (id: unknown) =>
+    projects.find((p) => p.id === id)?.name ?? "project";
   const posIn = (id: unknown) => {
     const p = projects.find((x) => x.id === id);
     const g = p ? groupOf(p) : [];
@@ -255,18 +264,29 @@ export function Sidebar({
         "Press Space or Enter to pick up the project. Use the Up and Down arrows to move it, Space or Enter to drop, or Escape to cancel.",
     },
     announcements: {
-      onDragStart: ({ active }: any) => `Picked up ${nameOf(active.id)}, ${posIn(active.id)}.`,
+      onDragStart: ({ active }: any) =>
+        `Picked up ${nameOf(active.id)}, ${posIn(active.id)}.`,
       onDragOver: ({ active, over }: any) =>
-        over ? `${nameOf(active.id)} is over ${posIn(over.id)}.` : `${nameOf(active.id)} is not over the list.`,
+        over
+          ? `${nameOf(active.id)} is over ${posIn(over.id)}.`
+          : `${nameOf(active.id)} is not over the list.`,
       onDragEnd: ({ active, over }: any) =>
-        over ? `Dropped ${nameOf(active.id)} at ${posIn(over.id)}.` : `Dropped ${nameOf(active.id)}.`,
-      onDragCancel: ({ active }: any) => `Reorder cancelled. ${nameOf(active.id)} stays put.`,
+        over
+          ? `Dropped ${nameOf(active.id)} at ${posIn(over.id)}.`
+          : `Dropped ${nameOf(active.id)}.`,
+      onDragCancel: ({ active }: any) =>
+        `Reorder cancelled. ${nameOf(active.id)} stays put.`,
     },
   };
   function onDragEnd(e: DragEndEvent) {
     const p = projects.find((x) => x.id === e.active.id);
     if (!p) return;
-    const next = dropOnto(fullIds, groupOf(p), p.id, e.over ? String(e.over.id) : null);
+    const next = dropOnto(
+      fullIds,
+      groupOf(p),
+      p.id,
+      e.over ? String(e.over.id) : null,
+    );
     if (next) reorder(next);
   }
 
@@ -453,13 +473,24 @@ export function Sidebar({
   // and the mobile drawer; CSS guarantees only one is ever displayed.
   const body = (
     <>
-      <nav
-        aria-label="Projects"
-        className="flex-1 space-y-0.5 overflow-y-auto px-2"
-      >
-        {shown.length === 0 && (
+      <ScrollFadeNav label="Projects">
+        {visibleRows.length === 0 && (
           <p className="px-2 py-1 text-sm text-fg-subtle">
-            {projects.length === 0 ? "No projects yet" : "No visible projects"}
+            {projects.length === 0 ? (
+              "No projects yet"
+            ) : (
+              <>
+                No visible projects.{" "}
+                {!hiddenOpen && (
+                  <button
+                    onClick={toggleShowHidden}
+                    className="underline hover:text-fg"
+                  >
+                    Show hidden
+                  </button>
+                )}
+              </>
+            )}
           </p>
         )}
         <DndContext
@@ -468,47 +499,69 @@ export function Sidebar({
           accessibility={dndA11y}
           onDragEnd={onDragEnd}
         >
-          {[shown.filter((p) => !p.hidden), shown.filter((p) => p.hidden)].map(
-            (group, gi) =>
-              group.length > 0 && (
-                <SortableContext
-                  key={gi}
-                  items={group.map((p) => p.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {group.map((p) => (
-                    <ProjectRow
-                      key={p.id}
-                      p={p}
-                      active={p.id === selectedId}
-                      lastUsed={lastUsed}
-                      menuOpen={menuFor === p.id}
-                      onPick={() => pick(p.id)}
-                      onOpenMenu={(el) => openMenu(p.id, el)}
-                      onCloseMenu={() => closeMenu()}
-                    />
-                  ))}
-                </SortableContext>
-              )
-          )}
+          <SortableContext
+            items={visibleRows.map((p) => p.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {visibleRows.map((p) => (
+              <ProjectRow
+                key={p.id}
+                p={p}
+                active={p.id === selectedId}
+                lastUsed={lastUsed}
+                menuOpen={menuFor === p.id}
+                onPick={() => pick(p.id)}
+                onOpenMenu={(el) => openMenu(p.id, el)}
+                onCloseMenu={() => closeMenu()}
+              />
+            ))}
+          </SortableContext>
         </DndContext>
-      </nav>
 
-      {hiddenCount > 0 && (
-        <button
-          onClick={toggleShowHidden}
-          disabled={forced}
-          aria-pressed={showHidden || forced}
-          title={
-            forced ? "Shown because the current project is hidden" : undefined
-          }
-          className="border-t border-border px-3 py-1.5 text-left text-xs text-fg-subtle hover:text-fg disabled:cursor-default disabled:hover:text-fg-subtle"
-        >
-          {showHidden || forced
-            ? "Hide hidden projects"
-            : `Show hidden projects (${hiddenCount})`}
-        </button>
-      )}
+        {/* Hidden projects: a collapsible section after the list. Workspace-
+            wide (every user sees the same), ordered by sort_order, not
+            draggable. Forced open while the selected project is hidden. */}
+        {hiddenCount > 0 && (
+          <div className="pt-2">
+            <button
+              onClick={toggleShowHidden}
+              disabled={forced}
+              aria-expanded={hiddenOpen}
+              title={
+                forced
+                  ? "Open because the current project is hidden"
+                  : undefined
+              }
+              className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-semibold uppercase tracking-wide text-fg-subtle hover:text-fg disabled:cursor-default disabled:hover:text-fg-subtle"
+            >
+              <span
+                aria-hidden="true"
+                className={`transition-transform ${hiddenOpen ? "rotate-90" : ""}`}
+              >
+                ▸
+              </span>
+              Hidden ({hiddenCount})
+            </button>
+            {hiddenOpen &&
+              hiddenRows.map((p) => (
+                <ProjectRow
+                  key={p.id}
+                  p={p}
+                  dimmed
+                  active={p.id === selectedId}
+                  lastUsed={lastUsed}
+                  menuOpen={menuFor === p.id}
+                  onPick={() => pick(p.id)}
+                  onOpenMenu={(el) => openMenu(p.id, el)}
+                  onCloseMenu={() => closeMenu()}
+                  onShow={
+                    p.id === selectedId ? () => setHidden(p, false) : undefined
+                  }
+                />
+              ))}
+          </div>
+        )}
+      </ScrollFadeNav>
 
       <div className="border-t border-border p-2">
         {creating ? (
@@ -653,8 +706,14 @@ function ProjectRow({
   onPick,
   onOpenMenu,
   onCloseMenu,
+  dimmed = false,
+  onShow,
 }: {
   p: Project;
+  // A row in the Hidden section: italic (fg-muted keeps 4.5:1), no grip.
+  dimmed?: boolean;
+  // Quick "Show" (the selected hidden project).
+  onShow?: () => void;
   active: boolean;
   lastUsed: boolean;
   menuOpen: boolean;
@@ -670,7 +729,7 @@ function ProjectRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: p.id });
+  } = useSortable({ id: p.id, disabled: dimmed });
   const openFromRow = (root: HTMLElement | null | undefined) => {
     const btn = root?.querySelector<HTMLElement>("[data-row-menu]");
     if (btn) onOpenMenu(btn);
@@ -687,18 +746,22 @@ function ProjectRow({
         openFromRow(e.currentTarget);
       }}
     >
-      <button
-        ref={setActivatorNodeRef}
-        {...attributes}
-        {...listeners}
-        aria-label={`Reorder ${p.name}`}
-        title="Drag to reorder"
-        className={`shrink-0 cursor-grab touch-none rounded px-0.5 py-1.5 text-xs leading-none text-fg-subtle hover:text-fg active:cursor-grabbing ${
-          isDragging || active ? "" : REVEAL
-        }`}
-      >
-        <span aria-hidden="true">⋮⋮</span>
-      </button>
+      {dimmed ? (
+        <span aria-hidden="true" className="w-3 shrink-0" />
+      ) : (
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`Reorder ${p.name}`}
+          title="Drag to reorder"
+          className={`shrink-0 cursor-grab touch-none rounded px-0.5 py-1.5 text-xs leading-none text-fg-subtle hover:text-fg active:cursor-grabbing ${
+            isDragging || active ? "" : REVEAL
+          }`}
+        >
+          <span aria-hidden="true">⋮⋮</span>
+        </button>
+      )}
       <button
         onClick={onPick}
         onKeyDown={(e) => {
@@ -715,19 +778,27 @@ function ProjectRow({
             ? "bg-accent-soft text-accent ring-1 ring-accent-border"
             : active
               ? "text-fg ring-1 ring-border hover:bg-bg-soft"
-              : "text-fg-muted hover:bg-bg-soft hover:text-fg"
+              : dimmed
+                ? "italic text-fg-muted hover:bg-bg-soft hover:text-fg"
+                : "text-fg-muted hover:bg-bg-soft hover:text-fg"
         }`}
       >
-        {p.hidden ? (
-          <span title="Hidden" aria-label="Hidden" className="shrink-0 text-fg-subtle">
-            ⦸
-          </span>
-        ) : null}
         <span className="truncate">{p.name}</span>
       </button>
+      {onShow && (
+        <button
+          onClick={onShow}
+          title="Show in sidebar"
+          className="shrink-0 rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-soft"
+        >
+          Show
+        </button>
+      )}
       <button
         data-row-menu
-        onClick={(e) => (menuOpen ? onCloseMenu() : onOpenMenu(e.currentTarget))}
+        onClick={(e) =>
+          menuOpen ? onCloseMenu() : onOpenMenu(e.currentTarget)
+        }
         aria-label={`Actions for ${p.name}`}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
@@ -740,5 +811,45 @@ function ProjectRow({
         ⋯
       </button>
     </div>
+  );
+}
+
+// The scrolling project list. A fade at the bottom edge says "more below"
+// while it can still scroll (instead of cutting a row mid-glyph).
+function ScrollFadeNav({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const [more, setMore] = useState(false);
+  const measure = useCallback(() => {
+    const el = ref.current;
+    if (el) setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+  }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    for (const c of Array.from(el.children)) ro.observe(c);
+    return () => ro.disconnect();
+  });
+  return (
+    <nav
+      ref={ref}
+      aria-label={label}
+      onScroll={measure}
+      className={`flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 ${
+        more
+          ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2rem),transparent)]"
+          : ""
+      }`}
+    >
+      {children}
+    </nav>
   );
 }
