@@ -284,6 +284,18 @@ function ProjectSection({
     }
   }
 
+  // Sidebar visibility. Workspace-wide (every user sees the same list), so the
+  // copy says "sidebar", not "for me". Applied immediately.
+  async function setHidden(hidden: boolean) {
+    try {
+      await api.updateProject(project.id, { hidden });
+      onSaved();
+      toast(hidden ? "Hidden from the sidebar" : "Shown in the sidebar", "success");
+    } catch (e) {
+      toast((e as ApiClientError).message ?? "Failed", "error");
+    }
+  }
+
   // Ready status: where a human puts a ticket to hand it to the agents (/ready
   // and the agent create gate). Applied immediately, like the default status.
   async function setReadyStatus(key: string) {
@@ -411,6 +423,18 @@ function ProjectSection({
                 <span className="text-fg-subtle">— not set</span>
               )}
             </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="w-40 text-fg-subtle">Sidebar</span>
+            <label className="inline-flex items-center gap-2 text-fg">
+              <input
+                type="checkbox"
+                checked={!!project.hidden}
+                onChange={(e) => setHidden(e.target.checked)}
+              />
+              Hidden from sidebar
+              <span className="text-xs text-fg-subtle">(listed under Hidden for everyone)</span>
+            </label>
           </div>
           <div className="flex items-center gap-3">
             <span className="w-40 text-fg-subtle">Default status</span>
