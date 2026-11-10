@@ -7,20 +7,22 @@ import type { Project } from "@/lib/types";
 import { api } from "@/lib/client";
 import { useAuth, useInboxCount } from "./useApp";
 import { toast } from "./Toast";
-import { Menu } from "./Menu";
+import { Menu, type MenuEntry } from "./Menu";
 import { useTheme } from "./ThemeProvider";
 import { isAccentChoice, isThemePack, nextChoice } from "./theme";
+import { headerContext } from "./nav-logic";
 
-// Top bar: page nav links + theme toggle + auth. The project switcher and
-// "+ New project" live in the left <Sidebar> now. The selected project is
-// carried in the ?project= query string so it survives navigation across pages.
-//
-// On phones (< md) a leading hamburger opens the project drawer, and the row
-// never wraps: link padding tightens and the brand/username text drops away.
+// Top bar. Left: "PM / <current project>" (PM-0019) — or the page title on
+// cross-project pages (/home, /inbox) — plus the live dot. The name is a button
+// that shows the project list (focus the sidebar's active row on desktop, open
+// the drawer on phones); it is not a switcher. Right: search + page links, then
+// the Project menu, theme toggle and account on desktop, folded into one ⋯
+// menu below `md`. The selected project is carried in ?project= so it
+// survives navigation across pages.
 export function Nav({
   projects,
   selectedId,
-  onMenu,
+  onProjectName,
   menuOpen = false,
   menuRef,
   onSearch,
@@ -28,8 +30,11 @@ export function Nav({
 }: {
   projects: Project[];
   selectedId: string | null;
-  onMenu?: () => void;
+  // The project-name button: reveal the sidebar (desktop) or open the drawer.
+  onProjectName?: () => void;
+  // The mobile drawer is open (aria-expanded on the name button).
   menuOpen?: boolean;
+  // Focus returns here when the mobile drawer closes.
   menuRef?: React.Ref<HTMLButtonElement>;
   // Opens the command palette (also bound to Ctrl/⌘+K by AppShell).
   onSearch?: () => void;
@@ -44,6 +49,13 @@ export function Nav({
   const closeProjectMenu = useCallback((opts?: { restoreFocus?: boolean }) => {
     setProjectMenu(false);
     if (opts?.restoreFocus !== false) projectBtn.current?.focus();
+  }, []);
+  // Phones: one ⋯ menu for the project pages, theme and account.
+  const moreBtn = useRef<HTMLButtonElement>(null);
+  const [moreMenu, setMoreMenu] = useState(false);
+  const closeMoreMenu = useCallback((opts?: { restoreFocus?: boolean }) => {
+    setMoreMenu(false);
+    if (opts?.restoreFocus !== false) moreBtn.current?.focus();
   }, []);
   const { user, refresh } = useAuth();
   // Open questions waiting on a human (agents asking). The badge is how the
@@ -75,12 +87,15 @@ export function Nav({
     }
   }
 
+  const q = selectedId ? `?project=${encodeURIComponent(selectedId)}` : "";
+  const ctx = headerContext(projects, selectedId, pathname);
+
   const link = (href: string, label: React.ReactNode) => {
     const active = pathname === href;
-    const q = selectedId ? `?project=${selectedId}` : "";
     return (
       <Link
         href={href + q}
+        aria-current={active ? "page" : undefined}
         className={`px-1.5 py-1.5 text-sm sm:px-3 ${
           active
             ? "bg-accent-soft text-accent ring-1 ring-accent-border"
@@ -98,52 +113,84 @@ export function Nav({
     pathname === "/archive" ||
     pathname === "/trash";
 
-  const goProject = (href: string) =>
-    router.push(href + (selectedId ? `?project=${encodeURIComponent(selectedId)}` : ""));
+  const goProject = (href: string) => router.push(href + q);
+  const projectItems: MenuEntry[] = [
+    { kind: "item", label: "Settings", onSelect: () => goProject("/settings") },
+    { kind: "item", label: "Appearance", onSelect: () => goProject("/appearance") },
+    { kind: "separator" },
+    { kind: "item", label: "Archive", onSelect: () => goProject("/archive") },
+    { kind: "item", label: "Trash", onSelect: () => goProject("/trash") },
+  ];
+  const moreItems: MenuEntry[] = [
+    ...projectItems,
+    { kind: "separator" },
+    {
+      kind: "item",
+      label: `Theme: ${choice} → ${nextChoice(choice)}`,
+      onSelect: () => setChoice(nextChoice(choice)),
+    },
+    ...(user
+      ? [{ kind: "item" as const, label: `Logout (${user.username})`, onSelect: logout }]
+      : [
+          { kind: "item" as const, label: "Login", onSelect: () => router.push("/login") },
+          { kind: "item" as const, label: "Register", onSelect: () => router.push("/register") },
+        ]),
+  ];
+
+  const title = ctx.title ?? (projects.length ? "Select a project" : "");
 
   return (
-    <header className="theme-nav flex items-center gap-2 whitespace-nowrap border-b border-border px-2 py-2 sm:gap-4 sm:px-5 sm:py-3">
-      {onMenu && (
+    <header className="theme-nav flex h-14 shrink-0 items-center gap-2 whitespace-nowrap border-b border-border px-2 sm:gap-4 sm:px-5">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Link
+          href={"/" + q}
+          className="hidden shrink-0 font-semibold text-fg hover:text-accent sm:inline"
+        >
+          PM
+        </Link>
+        <span aria-hidden="true" className="hidden text-fg-subtle sm:inline">
+          /
+        </span>
         <button
           ref={menuRef}
-          onClick={onMenu}
-          aria-label="Open projects"
+          type="button"
+          onClick={onProjectName}
           aria-expanded={menuOpen}
-          title="Projects"
-          className="rounded px-2 py-1.5 text-fg-muted hover:text-fg md:hidden"
+          aria-label={title ? `${title}, show projects` : "Show projects"}
+          title={ctx.title ?? undefined}
+          className="flex min-w-0 items-baseline gap-1.5 rounded px-1.5 py-1 text-left hover:bg-bg-soft"
         >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 20 20"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
+          <span
+            className={`truncate font-semibold ${ctx.title ? "text-fg" : "text-fg-subtle"}`}
           >
-            <path d="M3 5h14M3 10h14M3 15h14" />
-          </svg>
-        </button>
-      )}
-      {/* Brand hides on phones; the row needs the room for its links. */}
-      <span className="hidden font-semibold text-fg sm:inline">
-        📋<span className="hidden min-[400px]:inline"> PM</span>
-      </span>
-      {live && (
-        <span
-          role="status"
-          title="Live: changes from anyone appear as they happen"
-          className="-ml-1 inline-flex items-center gap-1 text-[11px] text-fg-subtle sm:-ml-2"
-        >
-          <span aria-hidden="true" className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-50 motion-reduce:hidden" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            {title}
           </span>
-          <span className="sr-only sm:not-sr-only">live</span>
-        </span>
-      )}
+          {ctx.prefix && (
+            <span className="hidden shrink-0 text-xs text-fg-subtle min-[400px]:inline">
+              {ctx.prefix}
+            </span>
+          )}
+          {/* Opens the drawer on phones. */}
+          <span aria-hidden="true" className="shrink-0 text-xs text-fg-subtle md:hidden">
+            ▾
+          </span>
+        </button>
+        {live && (
+          <span
+            role="status"
+            title="Live: changes from anyone appear as they happen"
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] text-fg-subtle"
+          >
+            <span aria-hidden="true" className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-50 motion-reduce:hidden" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            </span>
+            <span className="sr-only lg:not-sr-only">live</span>
+          </span>
+        )}
+      </div>
 
-      <nav className="ml-auto flex items-center gap-0.5 sm:gap-1">
+      <nav className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
         {onSearch && (
           <button
             type="button"
@@ -172,16 +219,10 @@ export function Nav({
           </button>
         )}
         {link("/", "Board")}
-        {link(
-          "/home",
-          // Phones: a shorter label keeps the row from overflowing.
-          <>
-            <span className="sm:hidden">Mine</span>
-            <span className="hidden sm:inline">My work</span>
-          </>
-        )}
+        {link("/home", "My work")}
         <Link
-          href={"/inbox" + (selectedId ? `?project=${selectedId}` : "")}
+          href={"/inbox" + q}
+          aria-current={pathname === "/inbox" ? "page" : undefined}
           aria-label={
             inboxCount
               ? `Inbox, ${inboxCount} open question${inboxCount === 1 ? "" : "s"}`
@@ -203,87 +244,93 @@ export function Nav({
             </span>
           )}
         </Link>
+
+        {/* Phones: one ⋯ menu for everything below. */}
         <button
-          ref={projectBtn}
+          ref={moreBtn}
           type="button"
-          onClick={() => (projectMenu ? closeProjectMenu() : setProjectMenu(true))}
+          onClick={() => (moreMenu ? closeMoreMenu() : setMoreMenu(true))}
+          aria-label="More"
           aria-haspopup="menu"
-          aria-expanded={projectMenu}
-          aria-controls={projectMenu ? "project-menu" : undefined}
-          className={`px-1.5 py-1.5 text-sm sm:px-3 ${
-            projectMenuActive
-              ? "bg-accent-soft text-accent ring-1 ring-accent-border"
-              : "text-fg-muted hover:text-fg"
+          aria-expanded={moreMenu}
+          aria-controls={moreMenu ? "more-menu" : undefined}
+          className={`rounded px-2 py-1.5 text-sm md:hidden ${
+            projectMenuActive ? "bg-accent-soft text-accent" : "text-fg-muted hover:text-fg"
           }`}
         >
-          Project <span aria-hidden="true">▾</span>
+          ⋯
         </button>
         <Menu
-          id="project-menu"
-          label="Project"
-          open={projectMenu}
-          onClose={closeProjectMenu}
-          anchorRef={projectBtn}
+          id="more-menu"
+          label="More"
+          open={moreMenu}
+          onClose={closeMoreMenu}
+          anchorRef={moreBtn}
           align="end"
-          items={[
-            { kind: "item", label: "Settings", onSelect: () => goProject("/settings") },
-            { kind: "item", label: "Appearance", onSelect: () => goProject("/appearance") },
-            { kind: "separator" },
-            { kind: "item", label: "Archive", onSelect: () => goProject("/archive") },
-            { kind: "item", label: "Trash", onSelect: () => goProject("/trash") },
-          ]}
+          items={moreItems}
         />
-        <button
-          onClick={() => setChoice(nextChoice(choice))}
-          title={themeLabel}
-          aria-label={themeLabel}
-          className="rounded px-1.5 py-1.5 sm:px-2 text-sm text-fg-muted hover:text-fg"
-        >
-          {themeIcon}
-        </button>
-        <span className="mx-0.5 h-5 w-px bg-border sm:mx-1" />
-        {user ? (
-          <div className="flex items-center gap-2">
-            <span className="hidden text-sm text-fg-muted sm:inline">
-              👤 {user.username}
-            </span>
-            <button
-              onClick={logout}
-              title="Logout"
-              className="rounded px-1.5 py-1.5 text-sm text-fg-muted hover:text-fg sm:px-2"
-            >
-              {/* Icon-only on phones so the row fits; the text stays for AT. */}
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 20 20"
-                className="h-4 w-4 sm:hidden"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+
+        <div className="hidden items-center gap-1 md:flex">
+          <button
+            ref={projectBtn}
+            type="button"
+            onClick={() => (projectMenu ? closeProjectMenu() : setProjectMenu(true))}
+            aria-haspopup="menu"
+            aria-expanded={projectMenu}
+            aria-controls={projectMenu ? "project-menu" : undefined}
+            className={`px-3 py-1.5 text-sm ${
+              projectMenuActive
+                ? "bg-accent-soft text-accent ring-1 ring-accent-border"
+                : "text-fg-muted hover:text-fg"
+            }`}
+          >
+            Project <span aria-hidden="true">▾</span>
+          </button>
+          <Menu
+            id="project-menu"
+            label="Project"
+            open={projectMenu}
+            onClose={closeProjectMenu}
+            anchorRef={projectBtn}
+            align="end"
+            items={projectItems}
+          />
+          <button
+            onClick={() => setChoice(nextChoice(choice))}
+            title={themeLabel}
+            aria-label={themeLabel}
+            className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
+          >
+            {themeIcon}
+          </button>
+          <span className="mx-1 h-5 w-px bg-border" />
+          {user ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-fg-muted">👤 {user.username}</span>
+              <button
+                onClick={logout}
+                className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg"
               >
-                <path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M12 6l4 4-4 4M16 10H8" />
-              </svg>
-              <span className="sr-only sm:not-sr-only">Logout</span>
-            </button>
-          </div>
-        ) : (
-          <>
-            <Link
-              href="/login"
-              className="rounded px-2 py-1.5 text-sm text-fg-muted hover:text-fg sm:px-3"
-            >
-              Login
-            </Link>
-            <Link
-              href="/register"
-              className="rounded border border-border px-2 py-1.5 text-sm text-fg-muted hover:bg-bg-card sm:px-3"
-            >
-              Register
-            </Link>
-          </>
-        )}
+                Logout
+              </button>
+            </div>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
+              >
+                Login
+              </Link>
+              <Link
+                href="/register"
+                className="rounded border border-border px-3 py-1.5 text-sm text-fg-muted hover:bg-bg-card"
+              >
+                Register
+              </Link>
+            </>
+          )}
+        </div>
       </nav>
     </header>
   );
