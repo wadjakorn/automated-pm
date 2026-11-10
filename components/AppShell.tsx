@@ -76,6 +76,13 @@ export function AppShell({
 
   return (
     <div className="flex h-screen">
+      {/* First tab stop on every page: jump past the sidebar and header. */}
+      <a
+        href="#main"
+        className="sr-only z-50 rounded bg-bg-card px-3 py-2 text-sm text-fg shadow focus:not-sr-only focus:fixed focus:left-2 focus:top-2"
+      >
+        Skip to content
+      </a>
       <Sidebar
         projects={projects}
         selectedId={selectedId}
@@ -96,7 +103,11 @@ export function AppShell({
           onSearch={() => setPaletteOpen(true)}
           live={live}
         />
-        <div className={contentClassName ?? "flex-1 overflow-y-auto"}>
+        <div
+          id="main"
+          tabIndex={-1}
+          className={`outline-none ${contentClassName ?? "flex-1 overflow-y-auto"}`}
+        >
           {children}
         </div>
       </div>

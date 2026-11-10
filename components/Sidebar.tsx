@@ -27,6 +27,7 @@ import { Menu, type MenuEntry } from "./Menu";
 import {
   actionFailed,
   dropOnto,
+  rovingTarget,
   moveAvailability,
   moveVisible,
   neighbourAfterRemoval,
@@ -104,6 +105,7 @@ export function Sidebar({
   // whether hidden projects are revealed, persisted like the open state.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
+  const [rovingKey, setRovingKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof localStorage === "undefined") return;
@@ -217,8 +219,44 @@ export function Sidebar({
   const hiddenIds = projects.filter((p) => p.hidden).map((p) => p.id);
   const shownIds = shown.map((p) => p.id);
   const hiddenOpen = showHidden || forced;
+  // Roving tabindex (one tab stop for the whole list): the focusable item keys
+  // in display order, the hidden-section toggle included.
   const visibleRows = shown.filter((p) => !p.hidden);
   const hiddenRows = shown.filter((p) => p.hidden);
+  const HIDDEN_TOGGLE = "__hidden";
+  const rovingKeys = [
+    ...visibleRows.map((p) => p.id),
+    ...(hiddenCount > 0 && !forced ? [HIDDEN_TOGGLE] : []),
+    ...(hiddenOpen ? hiddenRows.map((p) => p.id) : []),
+  ];
+  const tabKey =
+    rovingKey && rovingKeys.includes(rovingKey)
+      ? rovingKey
+      : selectedId && rovingKeys.includes(selectedId)
+        ? selectedId
+        : rovingKeys[0];
+  // ↑/↓/Home/End/type-ahead move focus between [data-roving] items. Keys on
+  // other controls (the drag grip while dnd-kit holds a row) pass through.
+  const onListKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    const t = e.target as HTMLElement;
+    if (!t.dataset.roving || e.ctrlKey || e.metaKey || e.altKey) return;
+    const items = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>("[data-roving]:not(:disabled)")
+    );
+    const next = rovingTarget(
+      items.map((el) => el.dataset.label ?? ""),
+      items.indexOf(t),
+      e.key
+    );
+    if (next === null) return;
+    e.preventDefault();
+    items[next]?.focus();
+    items[next]?.scrollIntoView({ block: "nearest" });
+  };
+  const onListFocus = (e: React.FocusEvent<HTMLElement>) => {
+    const key = (e.target as HTMLElement).dataset.roving;
+    if (key) setRovingKey(key);
+  };
   const groupOf = (p: Project) => (p.hidden ? hiddenIds : visibleIds);
 
   // Show the new order (full ordered id list) at once, persist it in one
@@ -394,7 +432,11 @@ export function Sidebar({
   };
   const closeMenu = useCallback((opts?: { restoreFocus?: boolean }) => {
     setMenuFor(null);
-    if (opts?.restoreFocus !== false) menuAnchor.current?.focus();
+    // Back to the row's project button (the ⋯ is out of the tab order).
+    if (opts?.restoreFocus !== false) {
+      const row = menuAnchor.current?.parentElement?.querySelector<HTMLElement>("[data-roving]");
+      (row ?? menuAnchor.current)?.focus();
+    }
   }, []);
 
   // Items for a project's ⋯ menu. Moves are limited to the row's display group
@@ -473,7 +515,7 @@ export function Sidebar({
   // and the mobile drawer; CSS guarantees only one is ever displayed.
   const body = (
     <>
-      <ScrollFadeNav label="Projects">
+      <ScrollFadeNav label="Projects" onKeyDown={onListKeyDown} onFocus={onListFocus}>
         {visibleRows.length === 0 && (
           <p className="px-2 py-1 text-sm text-fg-subtle">
             {projects.length === 0 ? (
@@ -508,6 +550,7 @@ export function Sidebar({
                 key={p.id}
                 p={p}
                 active={p.id === selectedId}
+                tabbable={p.id === tabKey}
                 lastUsed={lastUsed}
                 menuOpen={menuFor === p.id}
                 onPick={() => pick(p.id)}
@@ -527,6 +570,9 @@ export function Sidebar({
               onClick={toggleShowHidden}
               disabled={forced}
               aria-expanded={hiddenOpen}
+              data-roving={HIDDEN_TOGGLE}
+              data-label="Hidden"
+              tabIndex={tabKey === HIDDEN_TOGGLE ? 0 : -1}
               title={
                 forced
                   ? "Open because the current project is hidden"
@@ -549,6 +595,7 @@ export function Sidebar({
                   p={p}
                   dimmed
                   active={p.id === selectedId}
+                  tabbable={p.id === tabKey}
                   lastUsed={lastUsed}
                   menuOpen={menuFor === p.id}
                   onPick={() => pick(p.id)}
@@ -708,7 +755,11 @@ function ProjectRow({
   onCloseMenu,
   dimmed = false,
   onShow,
+  tabbable,
 }: {
+  // The list's single tab stop (roving tabindex): this row's button and grip
+  // are in the tab order; every other row is reached with arrows.
+  tabbable: boolean;
   p: Project;
   // A row in the Hidden section: italic (fg-muted keeps 4.5:1), no grip.
   dimmed?: boolean;
@@ -746,26 +797,17 @@ function ProjectRow({
         openFromRow(e.currentTarget);
       }}
     >
-      {dimmed ? (
-        <span aria-hidden="true" className="w-3 shrink-0" />
-      ) : (
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          aria-label={`Reorder ${p.name}`}
-          title="Drag to reorder"
-          className={`shrink-0 cursor-grab touch-none rounded px-0.5 py-1.5 text-xs leading-none text-fg-subtle hover:text-fg active:cursor-grabbing ${
-            isDragging || active ? "" : REVEAL
-          }`}
-        >
-          <span aria-hidden="true">⋮⋮</span>
-        </button>
-      )}
       <button
         onClick={onPick}
+        tabIndex={tabbable ? 0 : -1}
+        data-roving={p.id}
+        data-label={p.name}
         onKeyDown={(e) => {
-          if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+          if (
+            e.key === "ContextMenu" ||
+            e.key === "ArrowRight" ||
+            (e.key === "F10" && e.shiftKey)
+          ) {
             e.preventDefault();
             openFromRow(e.currentTarget.parentElement);
           }
@@ -785,9 +827,29 @@ function ProjectRow({
       >
         <span className="truncate">{p.name}</span>
       </button>
+      {/* The grip comes after the row button in the DOM, so Tab goes row →
+          grip, but sits first visually (flex order). */}
+      {dimmed ? (
+        <span aria-hidden="true" className="order-first w-3 shrink-0" />
+      ) : (
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          tabIndex={tabbable ? 0 : -1}
+          aria-label={`Reorder ${p.name}`}
+          title="Drag to reorder"
+          className={`order-first shrink-0 cursor-grab touch-none rounded px-0.5 py-1.5 text-xs leading-none text-fg-subtle hover:text-fg active:cursor-grabbing ${
+            isDragging || active ? "" : REVEAL
+          }`}
+        >
+          <span aria-hidden="true">⋮⋮</span>
+        </button>
+      )}
       {onShow && (
         <button
           onClick={onShow}
+          tabIndex={tabbable ? 0 : -1}
           title="Show in sidebar"
           className="shrink-0 rounded px-1.5 py-1 text-xs text-accent hover:bg-bg-soft"
         >
@@ -796,6 +858,7 @@ function ProjectRow({
       )}
       <button
         data-row-menu
+        tabIndex={-1}
         onClick={(e) =>
           menuOpen ? onCloseMenu() : onOpenMenu(e.currentTarget)
         }
@@ -819,9 +882,13 @@ function ProjectRow({
 function ScrollFadeNav({
   label,
   children,
+  onKeyDown,
+  onFocus,
 }: {
   label: string;
   children: React.ReactNode;
+  onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
+  onFocus?: React.FocusEventHandler<HTMLElement>;
 }) {
   const ref = useRef<HTMLElement>(null);
   const [more, setMore] = useState(false);
@@ -843,6 +910,8 @@ function ScrollFadeNav({
       ref={ref}
       aria-label={label}
       onScroll={measure}
+      onKeyDown={onKeyDown}
+      onFocus={onFocus}
       className={`flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 ${
         more
           ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2rem),transparent)]"

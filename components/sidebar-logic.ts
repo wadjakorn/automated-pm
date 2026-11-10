@@ -111,3 +111,23 @@ export function dropOnto(
   rest.splice(to < from ? ai : ai + 1, 0, id);
   return rest;
 }
+
+// Roving focus in the sidebar list (one tab stop): which item gets focus for
+// a key, given the items' labels and the current index. ↑/↓ step without
+// wrapping, Home/End jump, a printable character jumps to the next label
+// starting with it (wrapping). Null = not a roving key / no match.
+export function rovingTarget(labels: string[], from: number, key: string): number | null {
+  const n = labels.length;
+  if (n === 0) return null;
+  if (key === "ArrowDown") return Math.min(from + 1, n - 1);
+  if (key === "ArrowUp") return Math.max(from - 1, 0);
+  if (key === "Home") return 0;
+  if (key === "End") return n - 1;
+  if (key.length !== 1 || !key.trim()) return null;
+  const c = key.toLowerCase();
+  for (let k = 1; k <= n; k++) {
+    const i = (from + k + n) % n;
+    if (labels[i].toLowerCase().startsWith(c)) return i;
+  }
+  return null;
+}
