@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Project } from "@/lib/types";
 import {
   actionFailed,
+  moveAvailability,
   moveVisible,
   neighbourAfterRemoval,
   orderForDisplay,
@@ -130,5 +131,20 @@ describe("stillShown", () => {
   });
   it("an unhidden project is shown either way", () => {
     expect(stillShown(list, "h1", false, false)).toBe(true);
+  });
+});
+
+describe("moveAvailability", () => {
+  it("first row can only go down", () => {
+    expect(moveAvailability(0, 3)).toEqual({ top: false, up: false, down: true, bottom: true });
+  });
+  it("last row can only go up", () => {
+    expect(moveAvailability(2, 3)).toEqual({ top: true, up: true, down: false, bottom: false });
+  });
+  it("single row cannot move", () => {
+    expect(moveAvailability(0, 1)).toEqual({ top: false, up: false, down: false, bottom: false });
+  });
+  it("a row missing from its group cannot move", () => {
+    expect(moveAvailability(-1, 3)).toEqual({ top: false, up: false, down: false, bottom: false });
   });
 });
