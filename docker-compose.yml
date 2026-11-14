@@ -3,7 +3,15 @@ services:
     build: .
     container_name: automated-pm
     ports:
-      - "3000:3000"
+      # Not on the LAN. Humans open https://project-manager.yadobi.dev (Caddy in
+      # ~/development/tailnet-proxy -> 127.0.0.1:3000). Compose reads TAILSCALE_IP /
+      # LOCAL_HOST_IP from the shell or a ./.env next to this file; unset, they fall back
+      # to loopback aliases, so a fresh clone is never exposed to the LAN or internet.
+      - "${TAILSCALE_IP:-127.0.0.2}:3000:3000"
+      # Loopback: the `pm` CLI and MCP clients use http://localhost:3000.
+      - "127.0.0.1:3000:3000"
+      # What this box's own hostname resolves to (/etc/hosts -> 127.0.1.1), so the short name works locally.
+      - "${LOCAL_HOST_IP:-127.0.1.1}:3000:3000"
     volumes:
       - ./data:/app/data
     environment:
