@@ -28,6 +28,12 @@ Open http://localhost:3000. SQLite data is stored at `./data/pm.db`.
 > The dev server can also be started via the saved config in
 > [`.claude/launch.json`](.claude/launch.json) (`next-dev` / `next-start`).
 
+**Docker (home box).** `docker compose up -d --build` publishes port 3000 on
+loopback (the CLI and MCP keep using `http://localhost:3000`), on
+`${TAILSCALE_IP}` and on `${LOCAL_HOST_IP}` (default `127.0.1.1`), never the LAN.
+On the tailnet, open the board at https://project-manager.yadobi.dev (Caddy
+reverse proxy to `127.0.0.1:3000`).
+
 ## CLI (for agents / scripting)
 
 The CLI talks to the **running server** (`PM_API`, default `http://localhost:3000`).
